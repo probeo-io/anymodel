@@ -303,6 +303,14 @@ export interface AnyModelConfig {
   anthropic?: ProviderConfig;
   openai?: ProviderConfig;
   google?: ProviderConfig;
+  mistral?: ProviderConfig;
+  groq?: ProviderConfig;
+  deepseek?: ProviderConfig;
+  xai?: ProviderConfig;
+  together?: ProviderConfig;
+  fireworks?: ProviderConfig;
+  perplexity?: ProviderConfig;
+  ollama?: ProviderConfig & { baseURL?: string };
   custom?: Record<string, CustomProviderConfig>;
   aliases?: Record<string, string>;
   defaults?: {

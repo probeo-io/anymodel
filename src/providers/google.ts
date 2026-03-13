@@ -18,9 +18,17 @@ const SUPPORTED_PARAMS = new Set([
   'tools', 'tool_choice', 'response_format',
 ]);
 
-const KNOWN_MODELS: ModelInfo[] = [
+// Fallback if API listing fails — kept current as of March 2026
+const FALLBACK_MODELS: ModelInfo[] = [
+  // Gemini 2.5
   { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro', created: 0, description: 'Most capable Gemini model', context_length: 1048576, pricing: { prompt: '0.00000125', completion: '0.000005' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
   { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', created: 0, description: 'Fast and efficient', context_length: 1048576, pricing: { prompt: '0.00000015', completion: '0.0000006' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  // Gemini 2.0
+  { id: 'google/gemini-2.0-flash', name: 'Gemini 2.0 Flash', created: 0, description: 'Fast multimodal model', context_length: 1048576, pricing: { prompt: '0.0000001', completion: '0.0000004' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'google/gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite', created: 0, description: 'Lightweight and fast', context_length: 1048576, pricing: { prompt: '0.00000005', completion: '0.0000002' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  // Gemini 1.5
+  { id: 'google/gemini-1.5-pro', name: 'Gemini 1.5 Pro', created: 0, description: 'Previous generation pro model', context_length: 2097152, pricing: { prompt: '0.00000125', completion: '0.000005' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 2097152, max_completion_tokens: 8192, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'google/gemini-1.5-flash', name: 'Gemini 1.5 Flash', created: 0, description: 'Previous generation flash model', context_length: 1048576, pricing: { prompt: '0.000000075', completion: '0.0000003' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 8192, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
 ];
 
 export function createGoogleAdapter(apiKey: string): ProviderAdapter {
@@ -253,7 +261,42 @@ export function createGoogleAdapter(apiKey: string): ProviderAdapter {
     },
 
     async listModels(): Promise<ModelInfo[]> {
-      return KNOWN_MODELS;
+      try {
+        const res = await fetch(`${GEMINI_API_BASE}/models?key=${apiKey}`);
+
+        if (!res.ok) return FALLBACK_MODELS;
+
+        const data = await res.json() as any;
+        const models = (data.models || []) as any[];
+
+        return models
+          .filter((m: any) => m.name?.startsWith('models/gemini-') && m.supportedGenerationMethods?.includes('generateContent'))
+          .map((m: any) => {
+            const modelId = m.name.replace('models/', '');
+            return {
+              id: `google/${modelId}`,
+              name: m.displayName || modelId,
+              created: 0,
+              description: m.description || '',
+              context_length: m.inputTokenLimit || 1048576,
+              pricing: { prompt: '0', completion: '0' },
+              architecture: {
+                modality: 'text+image->text',
+                input_modalities: ['text', 'image', 'video', 'audio'],
+                output_modalities: ['text'],
+                tokenizer: 'gemini',
+              },
+              top_provider: {
+                context_length: m.inputTokenLimit || 1048576,
+                max_completion_tokens: m.outputTokenLimit || 65536,
+                is_moderated: false,
+              },
+              supported_parameters: Array.from(SUPPORTED_PARAMS),
+            };
+          });
+      } catch {
+        return FALLBACK_MODELS;
+      }
     },
 
     supportsParameter(param: string): boolean {

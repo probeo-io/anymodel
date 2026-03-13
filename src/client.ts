@@ -138,27 +138,60 @@ export class AnyModel {
   }
 
   private registerProviders(): void {
-    const { anthropic, openai, google } = this.config;
+    const config = this.config;
 
-    const anthropicKey = anthropic?.apiKey || process.env.ANTHROPIC_API_KEY;
-    const openaiKey = openai?.apiKey || process.env.OPENAI_API_KEY;
-    const googleKey = google?.apiKey || process.env.GOOGLE_API_KEY;
-
+    // OpenAI — native adapter
+    const openaiKey = config.openai?.apiKey || process.env.OPENAI_API_KEY;
     if (openaiKey) {
       this.registry.register('openai', createOpenAIAdapter(openaiKey));
     }
 
+    // Anthropic — native adapter
+    const anthropicKey = config.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY;
     if (anthropicKey) {
       this.registry.register('anthropic', createAnthropicAdapter(anthropicKey));
     }
 
+    // Google — native adapter
+    const googleKey = config.google?.apiKey || process.env.GOOGLE_API_KEY;
     if (googleKey) {
       this.registry.register('google', createGoogleAdapter(googleKey));
     }
 
-    // Register custom providers
-    if (this.config.custom) {
-      for (const [name, customConfig] of Object.entries(this.config.custom)) {
+    // Built-in OpenAI-compatible providers
+    const builtinProviders: Array<{
+      name: string;
+      baseURL: string;
+      configKey: keyof typeof config;
+      envVar: string;
+    }> = [
+      { name: 'mistral', baseURL: 'https://api.mistral.ai/v1', configKey: 'mistral', envVar: 'MISTRAL_API_KEY' },
+      { name: 'groq', baseURL: 'https://api.groq.com/openai/v1', configKey: 'groq', envVar: 'GROQ_API_KEY' },
+      { name: 'deepseek', baseURL: 'https://api.deepseek.com', configKey: 'deepseek', envVar: 'DEEPSEEK_API_KEY' },
+      { name: 'xai', baseURL: 'https://api.x.ai/v1', configKey: 'xai', envVar: 'XAI_API_KEY' },
+      { name: 'together', baseURL: 'https://api.together.xyz/v1', configKey: 'together', envVar: 'TOGETHER_API_KEY' },
+      { name: 'fireworks', baseURL: 'https://api.fireworks.ai/inference/v1', configKey: 'fireworks', envVar: 'FIREWORKS_API_KEY' },
+      { name: 'perplexity', baseURL: 'https://api.perplexity.ai', configKey: 'perplexity', envVar: 'PERPLEXITY_API_KEY' },
+    ];
+
+    for (const { name, baseURL, configKey, envVar } of builtinProviders) {
+      const providerConfig = config[configKey] as { apiKey?: string } | undefined;
+      const key = providerConfig?.apiKey || process.env[envVar];
+      if (key) {
+        this.registry.register(name, createCustomAdapter(name, { baseURL, apiKey: key }));
+      }
+    }
+
+    // Ollama — local, no API key needed
+    const ollamaConfig = config.ollama;
+    const ollamaURL = ollamaConfig?.baseURL || process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1';
+    if (ollamaConfig || process.env.OLLAMA_BASE_URL) {
+      this.registry.register('ollama', createCustomAdapter('ollama', { baseURL: ollamaURL }));
+    }
+
+    // Custom providers
+    if (config.custom) {
+      for (const [name, customConfig] of Object.entries(config.custom)) {
         this.registry.register(name, createCustomAdapter(name, customConfig));
       }
     }
