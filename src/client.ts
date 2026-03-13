@@ -1,0 +1,194 @@
+import type {
+  AnyModelConfig,
+  ChatCompletionRequest,
+  ChatCompletion,
+  ChatCompletionChunk,
+  ModelInfo,
+  GenerationStats,
+  BatchCreateRequest,
+  BatchObject,
+  BatchResults,
+} from './types.js';
+import { ProviderRegistry } from './providers/registry.js';
+import { Router } from './router.js';
+import { createOpenAIAdapter } from './providers/openai.js';
+import { createAnthropicAdapter } from './providers/anthropic.js';
+import { createGoogleAdapter } from './providers/google.js';
+import { createCustomAdapter } from './providers/custom.js';
+import { resolveConfig } from './config.js';
+import { GenerationStatsStore } from './utils/generation-stats.js';
+import { BatchManager, type BatchPollOptions } from './batch/manager.js';
+
+export class AnyModel {
+  private registry: ProviderRegistry;
+  private router: Router;
+  private config: AnyModelConfig;
+  private modelCache: ModelInfo[] | null = null;
+  private statsStore = new GenerationStatsStore();
+  private batchManager!: BatchManager;
+
+  public readonly chat: {
+    completions: {
+      create: (request: ChatCompletionRequest) => Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>>;
+    };
+  };
+
+  public readonly models: {
+    list: (opts?: { provider?: string }) => Promise<ModelInfo[]>;
+    refresh: () => Promise<ModelInfo[]>;
+  };
+
+  public readonly generation: {
+    get: (id: string) => GenerationStats | undefined;
+    list: (limit?: number) => GenerationStats[];
+  };
+
+  public readonly batches: {
+    create: (request: BatchCreateRequest) => Promise<BatchObject>;
+    createAndPoll: (request: BatchCreateRequest, options?: BatchPollOptions) => Promise<BatchResults>;
+    poll: (id: string, options?: BatchPollOptions) => Promise<BatchResults>;
+    get: (id: string) => BatchObject | null;
+    list: () => BatchObject[];
+    cancel: (id: string) => BatchObject;
+    results: (id: string) => BatchResults;
+  };
+
+  constructor(config: AnyModelConfig = {}) {
+    this.config = resolveConfig(config);
+    this.registry = new ProviderRegistry();
+
+    this.registerProviders();
+
+    this.router = new Router(this.registry, this.config.aliases, this.config);
+
+    // Namespace: chat.completions
+    this.chat = {
+      completions: {
+        create: async (request: ChatCompletionRequest) => {
+          const merged = this.applyDefaults(request);
+
+          if (merged.stream) {
+            return this.router.stream(merged);
+          }
+
+          const startTime = Date.now();
+          const response = await this.router.complete(merged);
+          const endTime = Date.now();
+
+          // Record generation stats
+          const providerName = response.model.includes('/')
+            ? response.model.split('/')[0]
+            : 'unknown';
+
+          this.statsStore.record({
+            id: response.id,
+            model: response.model,
+            providerName,
+            promptTokens: response.usage.prompt_tokens,
+            completionTokens: response.usage.completion_tokens,
+            startTime,
+            endTime,
+            finishReason: response.choices[0]?.finish_reason || 'stop',
+            streamed: false,
+          });
+
+          return response;
+        },
+      },
+    };
+
+    // Namespace: models
+    this.models = {
+      list: async (opts?: { provider?: string }) => {
+        if (!this.modelCache) {
+          this.modelCache = await this.fetchModels();
+        }
+        if (opts?.provider) {
+          return this.modelCache.filter(m => m.id.startsWith(`${opts.provider}/`));
+        }
+        return this.modelCache;
+      },
+      refresh: async () => {
+        this.modelCache = null;
+        return this.models.list();
+      },
+    };
+
+    // Namespace: generation
+    this.generation = {
+      get: (id: string) => this.statsStore.get(id),
+      list: (limit?: number) => this.statsStore.list(limit),
+    };
+
+    // Namespace: batches
+    this.batchManager = new BatchManager(this.router, {
+      dir: this.config.batch?.dir,
+      concurrency: this.config.batch?.concurrencyFallback,
+    });
+
+    this.batches = {
+      create: (request) => this.batchManager.create(request),
+      createAndPoll: (request, options) => this.batchManager.createAndPoll(request, options),
+      poll: (id, options) => this.batchManager.poll(id, options),
+      get: (id) => this.batchManager.get(id),
+      list: () => this.batchManager.list(),
+      cancel: (id) => this.batchManager.cancel(id),
+      results: (id) => this.batchManager.getResults(id),
+    };
+  }
+
+  private registerProviders(): void {
+    const { anthropic, openai, google } = this.config;
+
+    const anthropicKey = anthropic?.apiKey || process.env.ANTHROPIC_API_KEY;
+    const openaiKey = openai?.apiKey || process.env.OPENAI_API_KEY;
+    const googleKey = google?.apiKey || process.env.GOOGLE_API_KEY;
+
+    if (openaiKey) {
+      this.registry.register('openai', createOpenAIAdapter(openaiKey));
+    }
+
+    if (anthropicKey) {
+      this.registry.register('anthropic', createAnthropicAdapter(anthropicKey));
+    }
+
+    if (googleKey) {
+      this.registry.register('google', createGoogleAdapter(googleKey));
+    }
+
+    // Register custom providers
+    if (this.config.custom) {
+      for (const [name, customConfig] of Object.entries(this.config.custom)) {
+        this.registry.register(name, createCustomAdapter(name, customConfig));
+      }
+    }
+  }
+
+  private applyDefaults(request: ChatCompletionRequest): ChatCompletionRequest {
+    const defaults = this.config.defaults;
+    if (!defaults) return request;
+
+    return {
+      ...request,
+      temperature: request.temperature ?? defaults.temperature,
+      max_tokens: request.max_tokens ?? defaults.max_tokens,
+    };
+  }
+
+  private async fetchModels(): Promise<ModelInfo[]> {
+    const all: ModelInfo[] = [];
+    for (const adapter of this.registry.all()) {
+      try {
+        const models = await adapter.listModels();
+        all.push(...models);
+      } catch {
+        // Skip providers that fail model listing
+      }
+    }
+    return all.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  getRegistry(): ProviderRegistry {
+    return this.registry;
+  }
+}
