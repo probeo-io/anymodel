@@ -41,6 +41,9 @@
     "type": "git",
     "url": "https://github.com/probeo-io/anymodel"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "@types/node": "^25.5.0",
     "tsup": "^8.0.0",
