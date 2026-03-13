@@ -318,6 +318,20 @@ const response = await client.chat.completions.create({
 | POST | `/api/v1/batches/:id/cancel` | Cancel a batch |
 | GET | `/health` | Health check |
 
+## Examples
+
+See [`examples/basic.ts`](examples/basic.ts) for runnable demos of completions, streaming, tool calling, fallback routing, batch processing, and generation stats.
+
+```bash
+# Run all examples
+npx tsx examples/basic.ts
+
+# Run a specific example
+npx tsx examples/basic.ts stream
+npx tsx examples/basic.ts tools
+npx tsx examples/basic.ts batch
+```
+
 ## Built-in Resilience
 
 - **Retries**: Automatic retry with exponential backoff on 429/502/503 errors (configurable via `defaults.retries`)
