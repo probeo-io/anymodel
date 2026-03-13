@@ -49,18 +49,39 @@ for await (const chunk of stream) {
 }
 ```
 
+## Supported Providers
+
+Set the env var and go. Models are auto-discovered from each provider's API.
+
+| Provider | Env Var | Example Model |
+|----------|---------|---------------|
+| OpenAI | `OPENAI_API_KEY` | `openai/gpt-4o` |
+| Anthropic | `ANTHROPIC_API_KEY` | `anthropic/claude-sonnet-4-6` |
+| Google | `GOOGLE_API_KEY` | `google/gemini-2.5-pro` |
+| Mistral | `MISTRAL_API_KEY` | `mistral/mistral-large-latest` |
+| Groq | `GROQ_API_KEY` | `groq/llama-3.3-70b-versatile` |
+| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek/deepseek-chat` |
+| xAI | `XAI_API_KEY` | `xai/grok-3` |
+| Together | `TOGETHER_API_KEY` | `together/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+| Fireworks | `FIREWORKS_API_KEY` | `fireworks/accounts/fireworks/models/llama-v3p3-70b-instruct` |
+| Perplexity | `PERPLEXITY_API_KEY` | `perplexity/sonar-pro` |
+| Ollama | `OLLAMA_BASE_URL` | `ollama/llama3.3` |
+
+Ollama runs locally with no API key — just set `OLLAMA_BASE_URL` (defaults to `http://localhost:11434/v1`).
+
 ## Model Naming
 
 Models use `provider/model` format:
 
 ```
 anthropic/claude-sonnet-4-6
-anthropic/claude-opus-4-6
-anthropic/claude-haiku-4-5
 openai/gpt-4o
-openai/o3
 google/gemini-2.5-pro
-google/gemini-2.5-flash
+mistral/mistral-large-latest
+groq/llama-3.3-70b-versatile
+deepseek/deepseek-chat
+xai/grok-3
+ollama/llama3.3
 ```
 
 ## Fallback Routing

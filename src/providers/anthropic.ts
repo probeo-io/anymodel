@@ -20,10 +20,17 @@ const SUPPORTED_PARAMS = new Set([
   'tools', 'tool_choice', 'response_format',
 ]);
 
-const KNOWN_MODELS: ModelInfo[] = [
-  { id: 'anthropic/claude-opus-4-6', name: 'Claude Opus 4.6', created: 0, description: 'Most capable model', context_length: 200000, pricing: { prompt: '0.000005', completion: '0.000025' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 32768, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+// Fallback if API listing fails — kept current as of March 2026
+const FALLBACK_MODELS: ModelInfo[] = [
+  // Claude 4.6
+  { id: 'anthropic/claude-opus-4-6', name: 'Claude Opus 4.6', created: 0, description: 'Most capable model', context_length: 200000, pricing: { prompt: '0.000015', completion: '0.000075' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 32768, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
   { id: 'anthropic/claude-sonnet-4-6', name: 'Claude Sonnet 4.6', created: 0, description: 'Best balance of speed and capability', context_length: 200000, pricing: { prompt: '0.000003', completion: '0.000015' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 16384, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  { id: 'anthropic/claude-haiku-4-5', name: 'Claude Haiku 4.5', created: 0, description: 'Fastest and most compact', context_length: 200000, pricing: { prompt: '0.000001', completion: '0.000005' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 8192, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  // Claude 4.5
+  { id: 'anthropic/claude-sonnet-4-5-20251022', name: 'Claude Sonnet 4.5', created: 0, description: 'Previous generation balanced model', context_length: 200000, pricing: { prompt: '0.000003', completion: '0.000015' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 16384, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-haiku-4-5', name: 'Claude Haiku 4.5', created: 0, description: 'Fast and compact', context_length: 200000, pricing: { prompt: '0.000001', completion: '0.000005' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 8192, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  // Claude 3.5
+  { id: 'anthropic/claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', created: 0, description: 'Legacy balanced model', context_length: 200000, pricing: { prompt: '0.000003', completion: '0.000015' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 8192, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', created: 0, description: 'Legacy fast model', context_length: 200000, pricing: { prompt: '0.0000008', completion: '0.000004' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 8192, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
 ];
 
 export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
@@ -306,7 +313,45 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
     },
 
     async listModels(): Promise<ModelInfo[]> {
-      return KNOWN_MODELS;
+      try {
+        const res = await fetch(`${ANTHROPIC_API_BASE}/models`, {
+          method: 'GET',
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': ANTHROPIC_VERSION,
+          },
+        });
+
+        if (!res.ok) return FALLBACK_MODELS;
+
+        const data = await res.json() as any;
+        const models = (data.data || []) as any[];
+
+        return models
+          .filter((m: any) => m.type === 'model')
+          .map((m: any) => ({
+            id: `anthropic/${m.id}`,
+            name: m.display_name || m.id,
+            created: m.created_at ? new Date(m.created_at).getTime() / 1000 : 0,
+            description: m.display_name || '',
+            context_length: 200000,
+            pricing: { prompt: '0', completion: '0' },
+            architecture: {
+              modality: 'text+image->text',
+              input_modalities: ['text', 'image'],
+              output_modalities: ['text'],
+              tokenizer: 'claude',
+            },
+            top_provider: {
+              context_length: 200000,
+              max_completion_tokens: 16384,
+              is_moderated: false,
+            },
+            supported_parameters: Array.from(SUPPORTED_PARAMS),
+          }));
+      } catch {
+        return FALLBACK_MODELS;
+      }
     },
 
     supportsParameter(param: string): boolean {

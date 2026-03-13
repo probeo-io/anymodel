@@ -154,7 +154,21 @@ export function createOpenAIAdapter(apiKey: string, baseURL?: string): ProviderA
       const res = await makeRequest('/models', undefined, 'GET');
       const data = await res.json() as any;
       return (data.data || [])
-        .filter((m: any) => m.id.startsWith('gpt-') || m.id.startsWith('o') || m.id.startsWith('chatgpt-'))
+        .filter((m: any) => {
+          const id = m.id as string;
+          // Exclude non-chat models
+          if (id.includes('embedding')) return false;
+          if (id.includes('whisper')) return false;
+          if (id.includes('tts')) return false;
+          if (id.includes('dall-e')) return false;
+          if (id.includes('davinci')) return false;
+          if (id.includes('babbage')) return false;
+          if (id.includes('moderation')) return false;
+          if (id.includes('realtime')) return false;
+          if (id.startsWith('ft:')) return false;
+          // Include known chat model prefixes
+          return id.startsWith('gpt-') || id.startsWith('o1') || id.startsWith('o3') || id.startsWith('o4') || id.startsWith('chatgpt-');
+        })
         .map((m: any) => ({
           id: `openai/${m.id}`,
           name: m.id,

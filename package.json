@@ -25,7 +25,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
-    "serve": "node dist/cli.js serve"
+    "serve": "node dist/cli.js serve",
+    "release": "bash scripts/release.sh"
   },
   "keywords": [
     "llm",
@@ -36,6 +37,9 @@
     "batch",
     "ai"
   ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -93,14 +93,23 @@ function deepMerge(target: AnyModelConfig, source: AnyModelConfig): AnyModelConf
 function envConfig(): AnyModelConfig {
   const config: AnyModelConfig = {};
 
-  if (process.env.ANTHROPIC_API_KEY) {
-    config.anthropic = { apiKey: process.env.ANTHROPIC_API_KEY };
-  }
-  if (process.env.OPENAI_API_KEY) {
-    config.openai = { apiKey: process.env.OPENAI_API_KEY };
-  }
-  if (process.env.GOOGLE_API_KEY) {
-    config.google = { apiKey: process.env.GOOGLE_API_KEY };
+  const envMap: Array<[keyof AnyModelConfig, string]> = [
+    ['openai', 'OPENAI_API_KEY'],
+    ['anthropic', 'ANTHROPIC_API_KEY'],
+    ['google', 'GOOGLE_API_KEY'],
+    ['mistral', 'MISTRAL_API_KEY'],
+    ['groq', 'GROQ_API_KEY'],
+    ['deepseek', 'DEEPSEEK_API_KEY'],
+    ['xai', 'XAI_API_KEY'],
+    ['together', 'TOGETHER_API_KEY'],
+    ['fireworks', 'FIREWORKS_API_KEY'],
+    ['perplexity', 'PERPLEXITY_API_KEY'],
+  ];
+
+  for (const [key, envVar] of envMap) {
+    if (process.env[envVar]) {
+      (config as any)[key] = { apiKey: process.env[envVar] };
+    }
   }
 
   return config;
