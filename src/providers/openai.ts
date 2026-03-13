@@ -195,6 +195,10 @@ export function createOpenAIAdapter(apiKey: string, baseURL?: string): ProviderA
       return SUPPORTED_PARAMS.has(param);
     },
 
+    supportsBatch(): boolean {
+      return true;
+    },
+
     async sendRequest(request: ChatCompletionRequest): Promise<ChatCompletion> {
       const body = buildRequestBody(request);
       const res = await makeRequest('/chat/completions', body);

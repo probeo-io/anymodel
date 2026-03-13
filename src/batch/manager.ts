@@ -11,6 +11,7 @@ import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
 import { BatchStore } from './store.js';
 import type { Router } from '../router.js';
+import type { BatchAdapter } from '../providers/adapter.js';
 
 export interface BatchPollOptions {
   /** Poll interval in ms. Default: 5000 */
@@ -25,6 +26,7 @@ export class BatchManager {
   private store: BatchStore;
   private router: Router;
   private concurrencyLimit: number;
+  private batchAdapters = new Map<string, BatchAdapter>();
 
   constructor(router: Router, options?: { dir?: string; concurrency?: number }) {
     this.store = new BatchStore(options?.dir);
@@ -33,19 +35,38 @@ export class BatchManager {
   }
 
   /**
+   * Register a native batch adapter for a provider.
+   */
+  registerBatchAdapter(providerName: string, adapter: BatchAdapter): void {
+    this.batchAdapters.set(providerName, adapter);
+  }
+
+  /**
+   * Check if a provider has native batch support.
+   */
+  private getNativeBatchAdapter(model: string): { adapter: BatchAdapter; providerName: string } | null {
+    const providerName = model.split('/')[0];
+    const adapter = this.batchAdapters.get(providerName);
+    return adapter ? { adapter, providerName } : null;
+  }
+
+  /**
    * Create a batch and return immediately (no polling).
    */
   async create(request: BatchCreateRequest): Promise<BatchObject> {
     const id = generateId('batch');
     const now = new Date().toISOString();
+    const providerName = request.model.split('/')[0] || 'unknown';
+    const native = this.getNativeBatchAdapter(request.model);
+    const batchMode = native ? 'native' as const : 'concurrent' as const;
 
     const batch: BatchObject = {
       id,
       object: 'batch',
       status: 'pending',
       model: request.model,
-      provider_name: request.model.split('/')[0] || 'unknown',
-      batch_mode: 'concurrent',
+      provider_name: providerName,
+      batch_mode: batchMode,
       total: request.requests.length,
       completed: 0,
       failed: 0,
@@ -57,10 +78,13 @@ export class BatchManager {
     this.store.create(batch);
     this.store.saveRequests(id, request.requests);
 
-    // Start processing in the background
-    this.processBatch(id, request).catch(() => {
-      // Processing errors are captured per-item
-    });
+    if (native) {
+      // Native batch path
+      this.processNativeBatch(id, request, native.adapter).catch(() => {});
+    } else {
+      // Concurrent fallback path
+      this.processConcurrentBatch(id, request).catch(() => {});
+    }
 
     return batch;
   }
@@ -81,7 +105,7 @@ export class BatchManager {
    */
   async poll(id: string, options: BatchPollOptions = {}): Promise<BatchResults> {
     const interval = options.interval ?? 5000;
-    const timeout = options.timeout ?? 0; // 0 = indefinite
+    const timeout = options.timeout ?? 0;
     const startTime = Date.now();
 
     while (true) {
@@ -90,11 +114,19 @@ export class BatchManager {
         throw new AnyModelError(404, `Batch ${id} not found`);
       }
 
-      if (options.onProgress) {
-        options.onProgress(batch);
+      // For native batches, sync status from provider
+      if (batch.batch_mode === 'native' && batch.status === 'processing') {
+        await this.syncNativeBatchStatus(id);
       }
 
-      if (batch.status === 'completed' || batch.status === 'failed' || batch.status === 'cancelled') {
+      // Re-read after possible sync
+      const current = this.store.getMeta(id)!;
+
+      if (options.onProgress) {
+        options.onProgress(current);
+      }
+
+      if (current.status === 'completed' || current.status === 'failed' || current.status === 'cancelled') {
         return this.getResults(id);
       }
 
@@ -157,13 +189,26 @@ export class BatchManager {
   /**
    * Cancel a batch.
    */
-  cancel(id: string): BatchObject {
+  async cancel(id: string): Promise<BatchObject> {
     const batch = this.store.getMeta(id);
     if (!batch) {
       throw new AnyModelError(404, `Batch ${id} not found`);
     }
     if (batch.status === 'completed' || batch.status === 'cancelled') {
       return batch;
+    }
+
+    // If native batch, cancel at provider too
+    if (batch.batch_mode === 'native') {
+      const providerState = this.store.loadProviderState(id);
+      const adapter = this.batchAdapters.get(batch.provider_name);
+      if (adapter && providerState?.providerBatchId) {
+        try {
+          await adapter.cancelBatch(providerState.providerBatchId as string);
+        } catch {
+          // Best-effort cancellation
+        }
+      }
     }
 
     batch.status = 'cancelled';
@@ -173,9 +218,101 @@ export class BatchManager {
   }
 
   /**
-   * Process batch requests concurrently.
+   * Process batch via native provider batch API.
    */
-  private async processBatch(batchId: string, request: BatchCreateRequest): Promise<void> {
+  private async processNativeBatch(
+    batchId: string,
+    request: BatchCreateRequest,
+    adapter: BatchAdapter,
+  ): Promise<void> {
+    const batch = this.store.getMeta(batchId)!;
+
+    try {
+      // Strip provider prefix from model for the provider API
+      const model = request.model.includes('/')
+        ? request.model.split('/').slice(1).join('/')
+        : request.model;
+
+      // Create batch at provider
+      const { providerBatchId, metadata } = await adapter.createBatch(
+        model,
+        request.requests,
+        request.options as Record<string, unknown> | undefined,
+      );
+
+      // Persist provider state for resumability
+      this.store.saveProviderState(batchId, {
+        providerBatchId,
+        providerName: batch.provider_name,
+        ...metadata,
+      });
+
+      batch.status = 'processing';
+      this.store.updateMeta(batch);
+    } catch (err) {
+      batch.status = 'failed';
+      batch.completed_at = new Date().toISOString();
+      this.store.updateMeta(batch);
+      throw err;
+    }
+  }
+
+  /**
+   * Sync native batch status from provider.
+   * Called during polling to update local state.
+   */
+  private async syncNativeBatchStatus(batchId: string): Promise<void> {
+    const batch = this.store.getMeta(batchId);
+    if (!batch) return;
+
+    const providerState = this.store.loadProviderState(batchId);
+    if (!providerState?.providerBatchId) return;
+
+    const adapter = this.batchAdapters.get(batch.provider_name);
+    if (!adapter) return;
+
+    try {
+      const status = await adapter.pollBatch(providerState.providerBatchId as string);
+
+      batch.total = status.total || batch.total;
+      batch.completed = status.completed;
+      batch.failed = status.failed;
+
+      if (status.status === 'completed' || status.status === 'failed' || status.status === 'cancelled') {
+        batch.status = status.status;
+        batch.completed_at = new Date().toISOString();
+
+        // Download and persist results
+        if (status.status === 'completed' || status.status === 'failed') {
+          try {
+            const results = await adapter.getBatchResults(providerState.providerBatchId as string);
+            for (const result of results) {
+              this.store.appendResult(batchId, result);
+            }
+            // Update counts from actual results
+            batch.completed = results.filter(r => r.status === 'success').length;
+            batch.failed = results.filter(r => r.status === 'error').length;
+          } catch {
+            // Results download failed — mark as failed if not already
+            if (batch.status !== 'failed') {
+              batch.status = 'failed';
+            }
+          }
+        }
+      } else {
+        batch.status = 'processing';
+      }
+
+      this.store.updateMeta(batch);
+    } catch {
+      // Provider API error during poll — don't change status
+    }
+  }
+
+  /**
+   * Process batch requests concurrently (fallback path).
+   */
+  private async processConcurrentBatch(batchId: string, request: BatchCreateRequest): Promise<void> {
     const batch = this.store.getMeta(batchId)!;
     batch.status = 'processing';
     this.store.updateMeta(batch);
@@ -185,7 +322,6 @@ export class BatchManager {
     const active = new Set<Promise<void>>();
 
     const processItem = async (item: typeof items[0]): Promise<void> => {
-      // Check if batch was cancelled
       const current = this.store.getMeta(batchId);
       if (current?.status === 'cancelled') return;
 
@@ -223,7 +359,6 @@ export class BatchManager {
 
       this.store.appendResult(batchId, result);
 
-      // Update counts
       const meta = this.store.getMeta(batchId)!;
       if (result.status === 'success') {
         meta.completed++;
@@ -247,10 +382,8 @@ export class BatchManager {
       active.add(promise);
     }
 
-    // Wait for remaining
     await Promise.all(active);
 
-    // Finalize
     const finalMeta = this.store.getMeta(batchId)!;
     if (finalMeta.status !== 'cancelled') {
       finalMeta.status = finalMeta.failed === finalMeta.total ? 'failed' : 'completed';

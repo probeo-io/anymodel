@@ -16,6 +16,10 @@ export function createCustomAdapter(
     ...openaiAdapter,
     name,
 
+    supportsBatch(): boolean {
+      return false;
+    },
+
     async listModels() {
       // If static model list is provided in config, use that
       if (config.models && config.models.length > 0) {

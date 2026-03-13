@@ -18,6 +18,8 @@ import { createCustomAdapter } from './providers/custom.js';
 import { resolveConfig } from './config.js';
 import { GenerationStatsStore } from './utils/generation-stats.js';
 import { BatchManager, type BatchPollOptions } from './batch/manager.js';
+import { createOpenAIBatchAdapter } from './providers/openai-batch.js';
+import { createAnthropicBatchAdapter } from './providers/anthropic-batch.js';
 
 export class AnyModel {
   private registry: ProviderRegistry;
@@ -49,7 +51,7 @@ export class AnyModel {
     poll: (id: string, options?: BatchPollOptions) => Promise<BatchResults>;
     get: (id: string) => BatchObject | null;
     list: () => BatchObject[];
-    cancel: (id: string) => BatchObject;
+    cancel: (id: string) => Promise<BatchObject>;
     results: (id: string) => BatchResults;
   };
 
@@ -126,6 +128,8 @@ export class AnyModel {
       concurrency: this.config.batch?.concurrencyFallback,
     });
 
+    this.registerBatchAdapters();
+
     this.batches = {
       create: (request) => this.batchManager.create(request),
       createAndPoll: (request, options) => this.batchManager.createAndPoll(request, options),
@@ -194,6 +198,20 @@ export class AnyModel {
       for (const [name, customConfig] of Object.entries(config.custom)) {
         this.registry.register(name, createCustomAdapter(name, customConfig));
       }
+    }
+  }
+
+  private registerBatchAdapters(): void {
+    const config = this.config;
+
+    const openaiKey = config.openai?.apiKey || process.env.OPENAI_API_KEY;
+    if (openaiKey) {
+      this.batchManager.registerBatchAdapter('openai', createOpenAIBatchAdapter(openaiKey));
+    }
+
+    const anthropicKey = config.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY;
+    if (anthropicKey) {
+      this.batchManager.registerBatchAdapter('anthropic', createAnthropicBatchAdapter(anthropicKey));
     }
   }
 

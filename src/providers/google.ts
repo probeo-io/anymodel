@@ -303,6 +303,10 @@ export function createGoogleAdapter(apiKey: string): ProviderAdapter {
       return SUPPORTED_PARAMS.has(param);
     },
 
+    supportsBatch(): boolean {
+      return false;
+    },
+
     async sendRequest(request: ChatCompletionRequest): Promise<ChatCompletion> {
       const body = translateRequest(request);
       const url = getModelEndpoint(request.model, false);
