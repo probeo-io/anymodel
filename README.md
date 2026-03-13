@@ -359,6 +359,15 @@ npx tsx examples/basic.ts batch
 - **Rate limit tracking**: Per-provider rate limit state, automatically skips rate-limited providers during fallback routing
 - **Parameter stripping**: Unsupported parameters are automatically removed before forwarding to providers
 
+## Roadmap
+
+- [ ] **A/B testing** — split routing (% traffic to each model) and compare mode (same request to multiple models, return all responses with stats)
+- [ ] **Cost tracking** — per-request and aggregate cost calculation from provider pricing
+- [ ] **Caching** — response caching with configurable TTL for identical requests
+- [ ] **Native batch APIs** — use Anthropic Message Batches and OpenAI Batch API instead of concurrent requests
+- [ ] **Webhooks** — notify on batch completion
+- [ ] **Prompt logging** — optional request/response logging for debugging and evaluation
+
 ## License
 
 MIT
