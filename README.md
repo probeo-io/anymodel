@@ -433,16 +433,7 @@ npx tsx examples/basic.ts batch
 - [ ] **Cost tracking** — per-request and aggregate cost calculation from provider pricing
 - [ ] **Caching** — response caching with configurable TTL for identical requests
 - [x] **Native batch APIs** — OpenAI Batch API (JSONL upload, 50% cost) and Anthropic Message Batches (10K requests, async). Auto-detects provider and routes to native API, falls back to concurrent for other providers
-- [ ] **Webhooks** — notify on batch completion
-- [ ] **Prompt logging** — optional request/response logging for debugging and evaluation
-
-## Roadmap
-
-- [ ] **A/B testing** — split routing (% traffic to each model) and compare mode (same request to multiple models, return all responses with stats)
-- [ ] **Cost tracking** — per-request and aggregate cost calculation from provider pricing
-- [ ] **Caching** — response caching with configurable TTL for identical requests
-- [ ] **Native batch APIs** — use Anthropic Message Batches and OpenAI Batch API instead of concurrent requests
-- [ ] **Webhooks** — notify on batch completion
+- [ ] **Result export** — `saveResults()` to write batch results to a configurable output directory
 - [ ] **Prompt logging** — optional request/response logging for debugging and evaluation
 
 ## License

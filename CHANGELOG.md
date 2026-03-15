@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.3.0] - 2026-03-15
 
 ### Added
 
@@ -27,6 +27,24 @@ All notable changes to this project will be documented in this file.
 - `client.batches.get()`, `client.batches.list()`, `client.batches.results()` are now async (return Promises)
 - `client.batches.cancel()` is now async (returns `Promise<BatchObject>`)
 - Batch metadata writes use atomic temp-file + fsync + rename pattern to prevent corruption on crash
+
+## [0.2.0] - 2026-03-13
+
+### Added
+
+- Built-in providers: Mistral, Groq, DeepSeek, xAI, Together, Fireworks, Perplexity, Ollama
+- Dynamic model list fetching from Anthropic and Google APIs
+- OpenAI model filter updated to include o1/o3/o4 prefixes
+- Release script (`npm run release`)
+- CI workflow (lint, test, build on Node 20 and 22)
+- npm publish workflow (triggers on GitHub release)
+- SECURITY.md, CODE_OF_CONDUCT.md, CONTRIBUTING.md
+- `.editorconfig`
+- Runnable examples (`examples/basic.ts`)
+
+### Changed
+
+- README expanded with full provider table and examples
 
 ## [0.1.0] - 2026-03-13
 
