@@ -330,4 +330,8 @@ export interface AnyModelConfig {
     concurrencyFallback?: number;
     retentionDays?: number;
   };
+  io?: {
+    readConcurrency?: number;
+    writeConcurrency?: number;
+  };
 }

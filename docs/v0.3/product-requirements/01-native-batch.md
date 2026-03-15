@@ -83,7 +83,7 @@ Native batch APIs solve all of these:
 - `client.batches.create()` and `client.batches.createAndPoll()` work identically regardless of native vs concurrent
 - Same `BatchObject`, `BatchResults`, `BatchResultItem` types
 - Same `onProgress` callback behavior
-- Same disk persistence in `~/.anymodel/batches/`
+- Same disk persistence in `./.anymodel/batches/`
 - `poll()` and resume work across process restarts for native batches
 
 ### R5: Polling & Resumability
@@ -101,3 +101,10 @@ Native batch APIs solve all of these:
 ### R7: Cost Tracking (Metadata)
 - `BatchObject` includes `batch_mode` so callers know if they got native pricing
 - Usage summary aggregates tokens from all results
+
+### R8: High-Volume IO
+- All batch file operations use concurrency-limited async queues (20 concurrent reads, 10 concurrent writes)
+- Metadata and provider state use atomic durable writes (temp file → fsync → rename → directory fsync) to prevent corruption on crash
+- Directory existence is cached in memory to avoid redundant `mkdir` calls
+- Path operations are memoized to reduce repeated computation in high-throughput loops
+- `BatchStore` is fully async — no blocking sync `fs` calls

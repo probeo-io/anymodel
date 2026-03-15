@@ -147,11 +147,13 @@ const response = await client.chat.completions.create({
 
 ## Batch Processing
 
-Process many requests concurrently with disk persistence:
+Process many requests with native provider batch APIs or concurrent fallback. OpenAI and Anthropic batches are processed server-side — OpenAI at 50% cost, Anthropic with async processing for up to 10K requests. Other providers fall back to concurrent execution automatically.
+
+### Submit and wait
 
 ```typescript
 const results = await client.batches.createAndPoll({
-  model: "anthropic/claude-haiku-4-5",
+  model: "openai/gpt-4o-mini",
   requests: [
     { custom_id: "req-1", messages: [{ role: "user", content: "Summarize AI" }] },
     { custom_id: "req-2", messages: [{ role: "user", content: "Summarize ML" }] },
@@ -164,13 +166,70 @@ for (const result of results.results) {
 }
 ```
 
-Batches are persisted to `~/.anymodel/batches/` and survive process restarts. Resume polling a batch by ID:
+### Submit now, check later
+
+Submit a batch and get back an ID immediately — no need to keep the process running for native batches (OpenAI, Anthropic):
 
 ```typescript
-const batch = await client.batches.create(request);
-// ... later, even after restart ...
-const results = await client.batches.poll(batch.id);
+// Submit and get the batch ID
+const batch = await client.batches.create({
+  model: "anthropic/claude-haiku-4-5",
+  requests: [
+    { custom_id: "req-1", messages: [{ role: "user", content: "Summarize AI" }] },
+    { custom_id: "req-2", messages: [{ role: "user", content: "Summarize ML" }] },
+  ],
+});
+console.log(batch.id); // "batch-abc123"
+console.log(batch.batch_mode); // "native" or "concurrent"
+
+// Check status any time — even after a process restart
+const status = client.batches.get("batch-abc123");
+console.log(status.status); // "pending", "processing", "completed", "failed"
+
+// Wait for results when you're ready (reconnects to provider API)
+const results = await client.batches.poll("batch-abc123");
+
+// Or get results directly if already completed
+const results = client.batches.results("batch-abc123");
 ```
+
+### List and cancel
+
+```typescript
+// List all batches on disk
+const all = client.batches.list();
+for (const b of all) {
+  console.log(b.id, b.batch_mode, b.status, b.provider_name);
+}
+
+// Cancel a running batch (also cancels at the provider for native batches)
+await client.batches.cancel("batch-abc123");
+```
+
+### Batch configuration
+
+```typescript
+const client = new AnyModel({
+  batch: {
+    pollInterval: 10000, // default poll interval in ms (default: 5000)
+    concurrencyFallback: 10, // concurrent request limit for non-native providers (default: 5)
+  },
+  io: {
+    readConcurrency: 30, // concurrent file reads (default: 20)
+    writeConcurrency: 15, // concurrent file writes (default: 10)
+  },
+});
+
+// Override poll interval per call
+const results = await client.batches.createAndPoll(request, {
+  interval: 3000, // poll every 3s for this batch
+  onProgress: (batch) => {
+    console.log(`${batch.completed}/${batch.total} done`);
+  },
+});
+```
+
+Batches are persisted to `./.anymodel/batches/` in the current working directory and survive process restarts.
 
 ## Models Endpoint
 
@@ -231,6 +290,14 @@ Create `anymodel.config.json` in your project root:
   "defaults": {
     "temperature": 0.7,
     "max_tokens": 4096
+  },
+  "batch": {
+    "pollInterval": 5000,
+    "concurrencyFallback": 5
+  },
+  "io": {
+    "readConcurrency": 20,
+    "writeConcurrency": 10
   }
 }
 ```
@@ -358,13 +425,14 @@ npx tsx examples/basic.ts batch
 - **Retries**: Automatic retry with exponential backoff on 429/502/503 errors (configurable via `defaults.retries`)
 - **Rate limit tracking**: Per-provider rate limit state, automatically skips rate-limited providers during fallback routing
 - **Parameter stripping**: Unsupported parameters are automatically removed before forwarding to providers
+- **High-volume IO**: All batch file operations use concurrency-limited async queues with atomic durable writes (temp file + fsync + rename) to prevent corruption on crash. Defaults: 20 concurrent reads, 10 concurrent writes — configurable via `io.readConcurrency` and `io.writeConcurrency`
 
 ## Roadmap
 
 - [ ] **A/B testing** — split routing (% traffic to each model) and compare mode (same request to multiple models, return all responses with stats)
 - [ ] **Cost tracking** — per-request and aggregate cost calculation from provider pricing
 - [ ] **Caching** — response caching with configurable TTL for identical requests
-- [ ] **Native batch APIs** — use Anthropic Message Batches and OpenAI Batch API instead of concurrent requests
+- [x] **Native batch APIs** — OpenAI Batch API (JSONL upload, 50% cost) and Anthropic Message Batches (10K requests, async). Auto-detects provider and routes to native API, falls back to concurrent for other providers
 - [ ] **Webhooks** — notify on batch completion
 - [ ] **Prompt logging** — optional request/response logging for debugging and evaluation
 

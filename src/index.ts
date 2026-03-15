@@ -69,6 +69,19 @@ export type { BatchPollOptions } from './batch/index.js';
 export { createAnyModelServer, startServer } from './server.js';
 export type { ServerOptions } from './server.js';
 
+// Filesystem IO (queued, high-volume)
+export {
+  configureFsIO,
+  readFileQueued,
+  writeFileQueued,
+  writeFileFlushedQueued,
+  appendFileQueued,
+  ensureDir,
+  joinPath,
+  getFsQueueStatus,
+  waitForFsQueuesIdle,
+} from './utils/fs-io.js';
+
 // Provider adapters (for custom adapters)
 export type { ProviderAdapter, BatchAdapter, NativeBatchStatus } from './providers/adapter.js';
 export { createOpenAIBatchAdapter } from './providers/openai-batch.js';

@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Native batch API support for OpenAI (JSONL upload, 50% cost reduction, 24hr processing window)
+- Native batch API support for Anthropic (Message Batches API, up to 10K requests)
+- Automatic provider detection — native batch for OpenAI/Anthropic, concurrent fallback for others
+- `batch_mode` field on `BatchObject` (`"native"` or `"concurrent"`)
+- Fire-and-forget batch submission via `client.batches.create()` — submit now, poll later
+- Batch resumability across process restarts for native batches (provider state persisted to disk)
+- Batch cancellation at the provider level for native batches
+- Per-item error handling for native batch results
+- Configurable poll interval via `batch.pollInterval` config or per-call `options.interval`
+- `BatchAdapter` interface for implementing custom native batch providers
+- High-volume filesystem IO layer (`fs-io`) — concurrency-limited async queues (20 read, 10 write), atomic durable writes with fsync, directory existence caching, path memoization
+- Configurable IO concurrency via `io.readConcurrency` and `io.writeConcurrency` in client config (defaults: 20 read, 10 write)
+- Exported `configureFsIO`, `readFileQueued`, `writeFileQueued`, `writeFileFlushedQueued`, `appendFileQueued`, `ensureDir`, `joinPath`, `getFsQueueStatus`, `waitForFsQueuesIdle` utilities
+
+### Changed
+
+- Batch storage directory changed from `~/.anymodel/batches/` to `./.anymodel/batches/` (project-local)
+- `BatchStore` now fully async — all methods return Promises, using queued IO instead of blocking sync `fs` calls
+- `client.batches.get()`, `client.batches.list()`, `client.batches.results()` are now async (return Promises)
+- `client.batches.cancel()` is now async (returns `Promise<BatchObject>`)
+- Batch metadata writes use atomic temp-file + fsync + rename pattern to prevent corruption on crash
+
 ## [0.1.0] - 2026-03-13
 
 ### Added

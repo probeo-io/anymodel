@@ -20,6 +20,7 @@ import { GenerationStatsStore } from './utils/generation-stats.js';
 import { BatchManager, type BatchPollOptions } from './batch/manager.js';
 import { createOpenAIBatchAdapter } from './providers/openai-batch.js';
 import { createAnthropicBatchAdapter } from './providers/anthropic-batch.js';
+import { configureFsIO } from './utils/fs-io.js';
 
 export class AnyModel {
   private registry: ProviderRegistry;
@@ -49,15 +50,20 @@ export class AnyModel {
     create: (request: BatchCreateRequest) => Promise<BatchObject>;
     createAndPoll: (request: BatchCreateRequest, options?: BatchPollOptions) => Promise<BatchResults>;
     poll: (id: string, options?: BatchPollOptions) => Promise<BatchResults>;
-    get: (id: string) => BatchObject | null;
-    list: () => BatchObject[];
+    get: (id: string) => Promise<BatchObject | null>;
+    list: () => Promise<BatchObject[]>;
     cancel: (id: string) => Promise<BatchObject>;
-    results: (id: string) => BatchResults;
+    results: (id: string) => Promise<BatchResults>;
   };
 
   constructor(config: AnyModelConfig = {}) {
     this.config = resolveConfig(config);
     this.registry = new ProviderRegistry();
+
+    // Configure filesystem IO concurrency
+    if (this.config.io) {
+      configureFsIO(this.config.io);
+    }
 
     this.registerProviders();
 
@@ -126,6 +132,7 @@ export class AnyModel {
     this.batchManager = new BatchManager(this.router, {
       dir: this.config.batch?.dir,
       concurrency: this.config.batch?.concurrencyFallback,
+      pollInterval: this.config.batch?.pollInterval,
     });
 
     this.registerBatchAdapters();

@@ -136,7 +136,7 @@ describe('BatchManager native batch routing', () => {
     await new Promise(r => setTimeout(r, 100));
 
     const store = new BatchStore(TEST_DIR);
-    const state = store.loadProviderState(batch.id);
+    const state = await store.loadProviderState(batch.id);
     expect(state?.providerBatchId).toBe('provider-batch-123');
     expect(state?.providerName).toBe('openai');
   });
@@ -210,7 +210,7 @@ describe('BatchManager native batch routing', () => {
 
     await new Promise(r => setTimeout(r, 100));
 
-    const meta = manager.get(batch.id);
+    const meta = await manager.get(batch.id);
     expect(meta?.status).toBe('failed');
   });
 
