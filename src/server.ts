@@ -110,7 +110,7 @@ export function createAnyModelServer(options: ServerOptions = {}): ReturnType<ty
       }
 
       if (path === `${basePath}/batches` && req.method === 'GET') {
-        const batches = client.batches.list();
+        const batches = await client.batches.list();
         sendJSON(res, 200, { object: 'list', data: batches });
         return;
       }
@@ -120,12 +120,12 @@ export function createAnyModelServer(options: ServerOptions = {}): ReturnType<ty
         const id = parts[0];
 
         if (parts[1] === 'results') {
-          const results = client.batches.results(id);
+          const results = await client.batches.results(id);
           sendJSON(res, 200, results);
           return;
         }
 
-        const batch = client.batches.get(id);
+        const batch = await client.batches.get(id);
         if (!batch) {
           sendError(res, 404, `Batch ${id} not found`);
           return;
@@ -139,7 +139,7 @@ export function createAnyModelServer(options: ServerOptions = {}): ReturnType<ty
         const id = parts[0];
 
         if (parts[1] === 'cancel') {
-          const batch = client.batches.cancel(id);
+          const batch = await client.batches.cancel(id);
           sendJSON(res, 200, batch);
           return;
         }

@@ -1,93 +1,117 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, appendFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { homedir } from 'node:os';
 import type { BatchObject, BatchResultItem } from '../types.js';
+import {
+  ensureDir,
+  readFileQueued,
+  readJsonQueued,
+  readDirQueued,
+  writeFileQueued,
+  writeFileFlushedQueued,
+  appendFileQueued,
+  pathExistsQueued,
+  fileExistsQueued,
+  joinPath,
+  resolvePath,
+} from '../utils/fs-io.js';
 
-const DEFAULT_BATCH_DIR = join(homedir(), '.anymodel', 'batches');
+const DEFAULT_BATCH_DIR = joinPath(process.cwd(), '.anymodel', 'batches');
 
 /**
  * Disk-based batch persistence store.
+ * Uses queued, concurrency-limited IO for high-volume operations.
  * Structure: {dir}/{batchId}/meta.json, requests.jsonl, results.jsonl, provider.json
  */
 export class BatchStore {
   private dir: string;
+  private initialized = false;
 
   constructor(dir?: string) {
-    this.dir = resolve(dir || DEFAULT_BATCH_DIR);
-    mkdirSync(this.dir, { recursive: true });
+    this.dir = resolvePath(dir || DEFAULT_BATCH_DIR);
+  }
+
+  private async init(): Promise<void> {
+    if (this.initialized) return;
+    await ensureDir(this.dir);
+    this.initialized = true;
   }
 
   private batchDir(id: string): string {
-    return join(this.dir, id);
+    return joinPath(this.dir, id);
   }
 
   /**
    * Create a new batch directory and save initial metadata.
    */
-  create(batch: BatchObject): void {
+  async create(batch: BatchObject): Promise<void> {
+    await this.init();
     const dir = this.batchDir(batch.id);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'meta.json'), JSON.stringify(batch, null, 2));
+    await ensureDir(dir);
+    await writeFileFlushedQueued(joinPath(dir, 'meta.json'), JSON.stringify(batch, null, 2));
   }
 
   /**
-   * Update batch metadata.
+   * Update batch metadata (atomic write).
    */
-  updateMeta(batch: BatchObject): void {
-    const dir = this.batchDir(batch.id);
-    writeFileSync(join(dir, 'meta.json'), JSON.stringify(batch, null, 2));
+  async updateMeta(batch: BatchObject): Promise<void> {
+    await writeFileFlushedQueued(
+      joinPath(this.batchDir(batch.id), 'meta.json'),
+      JSON.stringify(batch, null, 2),
+    );
   }
 
   /**
    * Save requests as JSONL.
    */
-  saveRequests(id: string, requests: unknown[]): void {
-    const dir = this.batchDir(id);
+  async saveRequests(id: string, requests: unknown[]): Promise<void> {
     const lines = requests.map(r => JSON.stringify(r)).join('\n') + '\n';
-    writeFileSync(join(dir, 'requests.jsonl'), lines);
+    await writeFileQueued(joinPath(this.batchDir(id), 'requests.jsonl'), lines);
   }
 
   /**
    * Append a result to results.jsonl.
    */
-  appendResult(id: string, result: BatchResultItem): void {
-    const dir = this.batchDir(id);
-    appendFileSync(join(dir, 'results.jsonl'), JSON.stringify(result) + '\n');
+  async appendResult(id: string, result: BatchResultItem): Promise<void> {
+    await appendFileQueued(
+      joinPath(this.batchDir(id), 'results.jsonl'),
+      JSON.stringify(result) + '\n',
+    );
   }
 
   /**
    * Save provider-specific state (e.g., provider batch ID).
    */
-  saveProviderState(id: string, state: Record<string, unknown>): void {
-    const dir = this.batchDir(id);
-    writeFileSync(join(dir, 'provider.json'), JSON.stringify(state, null, 2));
+  async saveProviderState(id: string, state: Record<string, unknown>): Promise<void> {
+    await writeFileFlushedQueued(
+      joinPath(this.batchDir(id), 'provider.json'),
+      JSON.stringify(state, null, 2),
+    );
   }
 
   /**
    * Load provider state.
    */
-  loadProviderState(id: string): Record<string, unknown> | null {
-    const path = join(this.batchDir(id), 'provider.json');
-    if (!existsSync(path)) return null;
-    return JSON.parse(readFileSync(path, 'utf-8'));
+  async loadProviderState(id: string): Promise<Record<string, unknown> | null> {
+    const p = joinPath(this.batchDir(id), 'provider.json');
+    if (!(await fileExistsQueued(p))) return null;
+    return readJsonQueued<Record<string, unknown>>(p);
   }
 
   /**
    * Get batch metadata.
    */
-  getMeta(id: string): BatchObject | null {
-    const path = join(this.batchDir(id), 'meta.json');
-    if (!existsSync(path)) return null;
-    return JSON.parse(readFileSync(path, 'utf-8'));
+  async getMeta(id: string): Promise<BatchObject | null> {
+    const p = joinPath(this.batchDir(id), 'meta.json');
+    if (!(await fileExistsQueued(p))) return null;
+    return readJsonQueued<BatchObject>(p);
   }
 
   /**
    * Get all results for a batch.
    */
-  getResults(id: string): BatchResultItem[] {
-    const path = join(this.batchDir(id), 'results.jsonl');
-    if (!existsSync(path)) return [];
-    return readFileSync(path, 'utf-8')
+  async getResults(id: string): Promise<BatchResultItem[]> {
+    const p = joinPath(this.batchDir(id), 'results.jsonl');
+    if (!(await fileExistsQueued(p))) return [];
+    const raw = (await readFileQueued(p, 'utf8')) as string;
+    return raw
       .trim()
       .split('\n')
       .filter(Boolean)
@@ -97,9 +121,11 @@ export class BatchStore {
   /**
    * List all batch IDs.
    */
-  listBatches(): string[] {
-    if (!existsSync(this.dir)) return [];
-    return readdirSync(this.dir, { withFileTypes: true })
+  async listBatches(): Promise<string[]> {
+    await this.init();
+    if (!(await pathExistsQueued(this.dir))) return [];
+    const entries = await readDirQueued(this.dir);
+    return entries
       .filter(d => d.isDirectory())
       .map(d => d.name)
       .sort();
@@ -108,7 +134,7 @@ export class BatchStore {
   /**
    * Check if a batch exists.
    */
-  exists(id: string): boolean {
-    return existsSync(join(this.batchDir(id), 'meta.json'));
+  async exists(id: string): Promise<boolean> {
+    return fileExistsQueued(joinPath(this.batchDir(id), 'meta.json'));
   }
 }

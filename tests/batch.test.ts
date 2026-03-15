@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { BatchStore } from '../src/batch/store.js';
 import type { BatchObject, BatchResultItem } from '../src/types.js';
@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 describe('BatchStore', () => {
-  it('creates and retrieves batch metadata', () => {
+  it('creates and retrieves batch metadata', async () => {
     const store = new BatchStore(TEST_DIR);
     const batch: BatchObject = {
       id: 'batch-test1',
@@ -32,12 +32,12 @@ describe('BatchStore', () => {
       expires_at: null,
     };
 
-    store.create(batch);
-    const retrieved = store.getMeta('batch-test1');
+    await store.create(batch);
+    const retrieved = await store.getMeta('batch-test1');
     expect(retrieved).toEqual(batch);
   });
 
-  it('updates metadata', () => {
+  it('updates metadata', async () => {
     const store = new BatchStore(TEST_DIR);
     const batch: BatchObject = {
       id: 'batch-test2',
@@ -54,17 +54,17 @@ describe('BatchStore', () => {
       expires_at: null,
     };
 
-    store.create(batch);
+    await store.create(batch);
     batch.status = 'completed';
     batch.completed = 2;
-    store.updateMeta(batch);
+    await store.updateMeta(batch);
 
-    const retrieved = store.getMeta('batch-test2');
+    const retrieved = await store.getMeta('batch-test2');
     expect(retrieved!.status).toBe('completed');
     expect(retrieved!.completed).toBe(2);
   });
 
-  it('appends and retrieves results', () => {
+  it('appends and retrieves results', async () => {
     const store = new BatchStore(TEST_DIR);
     const batch: BatchObject = {
       id: 'batch-test3',
@@ -80,7 +80,7 @@ describe('BatchStore', () => {
       completed_at: null,
       expires_at: null,
     };
-    store.create(batch);
+    await store.create(batch);
 
     const result1: BatchResultItem = {
       custom_id: 'req-1',
@@ -103,19 +103,19 @@ describe('BatchStore', () => {
       error: { code: 429, message: 'Rate limited' },
     };
 
-    store.appendResult('batch-test3', result1);
-    store.appendResult('batch-test3', result2);
+    await store.appendResult('batch-test3', result1);
+    await store.appendResult('batch-test3', result2);
 
-    const results = store.getResults('batch-test3');
+    const results = await store.getResults('batch-test3');
     expect(results).toHaveLength(2);
     expect(results[0].custom_id).toBe('req-1');
     expect(results[1].status).toBe('error');
   });
 
-  it('lists batches', () => {
+  it('lists batches', async () => {
     const store = new BatchStore(TEST_DIR);
     for (const id of ['batch-a', 'batch-b', 'batch-c']) {
-      store.create({
+      await store.create({
         id,
         object: 'batch',
         status: 'pending',
@@ -131,14 +131,14 @@ describe('BatchStore', () => {
       });
     }
 
-    const batches = store.listBatches();
+    const batches = await store.listBatches();
     expect(batches).toHaveLength(3);
     expect(batches).toContain('batch-a');
   });
 
-  it('saves and loads provider state', () => {
+  it('saves and loads provider state', async () => {
     const store = new BatchStore(TEST_DIR);
-    store.create({
+    await store.create({
       id: 'batch-ps',
       object: 'batch',
       status: 'pending',
@@ -153,13 +153,13 @@ describe('BatchStore', () => {
       expires_at: null,
     });
 
-    store.saveProviderState('batch-ps', { providerBatchId: 'oai-batch-123' });
-    const state = store.loadProviderState('batch-ps');
+    await store.saveProviderState('batch-ps', { providerBatchId: 'oai-batch-123' });
+    const state = await store.loadProviderState('batch-ps');
     expect(state?.providerBatchId).toBe('oai-batch-123');
   });
 
-  it('returns null for nonexistent batch', () => {
+  it('returns null for nonexistent batch', async () => {
     const store = new BatchStore(TEST_DIR);
-    expect(store.getMeta('nonexistent')).toBeNull();
+    expect(await store.getMeta('nonexistent')).toBeNull();
   });
 });

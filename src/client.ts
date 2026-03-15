@@ -18,6 +18,9 @@ import { createCustomAdapter } from './providers/custom.js';
 import { resolveConfig } from './config.js';
 import { GenerationStatsStore } from './utils/generation-stats.js';
 import { BatchManager, type BatchPollOptions } from './batch/manager.js';
+import { createOpenAIBatchAdapter } from './providers/openai-batch.js';
+import { createAnthropicBatchAdapter } from './providers/anthropic-batch.js';
+import { configureFsIO } from './utils/fs-io.js';
 
 export class AnyModel {
   private registry: ProviderRegistry;
@@ -47,15 +50,20 @@ export class AnyModel {
     create: (request: BatchCreateRequest) => Promise<BatchObject>;
     createAndPoll: (request: BatchCreateRequest, options?: BatchPollOptions) => Promise<BatchResults>;
     poll: (id: string, options?: BatchPollOptions) => Promise<BatchResults>;
-    get: (id: string) => BatchObject | null;
-    list: () => BatchObject[];
-    cancel: (id: string) => BatchObject;
-    results: (id: string) => BatchResults;
+    get: (id: string) => Promise<BatchObject | null>;
+    list: () => Promise<BatchObject[]>;
+    cancel: (id: string) => Promise<BatchObject>;
+    results: (id: string) => Promise<BatchResults>;
   };
 
   constructor(config: AnyModelConfig = {}) {
     this.config = resolveConfig(config);
     this.registry = new ProviderRegistry();
+
+    // Configure filesystem IO concurrency
+    if (this.config.io) {
+      configureFsIO(this.config.io);
+    }
 
     this.registerProviders();
 
@@ -124,7 +132,10 @@ export class AnyModel {
     this.batchManager = new BatchManager(this.router, {
       dir: this.config.batch?.dir,
       concurrency: this.config.batch?.concurrencyFallback,
+      pollInterval: this.config.batch?.pollInterval,
     });
+
+    this.registerBatchAdapters();
 
     this.batches = {
       create: (request) => this.batchManager.create(request),
@@ -194,6 +205,20 @@ export class AnyModel {
       for (const [name, customConfig] of Object.entries(config.custom)) {
         this.registry.register(name, createCustomAdapter(name, customConfig));
       }
+    }
+  }
+
+  private registerBatchAdapters(): void {
+    const config = this.config;
+
+    const openaiKey = config.openai?.apiKey || process.env.OPENAI_API_KEY;
+    if (openaiKey) {
+      this.batchManager.registerBatchAdapter('openai', createOpenAIBatchAdapter(openaiKey));
+    }
+
+    const anthropicKey = config.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY;
+    if (anthropicKey) {
+      this.batchManager.registerBatchAdapter('anthropic', createAnthropicBatchAdapter(anthropicKey));
     }
   }
 

@@ -358,6 +358,10 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
       return SUPPORTED_PARAMS.has(param);
     },
 
+    supportsBatch(): boolean {
+      return true;
+    },
+
     async sendRequest(request: ChatCompletionRequest): Promise<ChatCompletion> {
       const body = translateRequest(request);
       const res = await makeRequest('/messages', body);
