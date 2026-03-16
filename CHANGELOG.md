@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-03-16
+
+### Added
+
+- Native Perplexity provider with static model listing (sonar, sonar-pro, sonar-reasoning, sonar-reasoning-pro, sonar-deep-research, r1-1776)
+- Citation passthrough in Perplexity responses
+- Cross-language links in README (Python, Go)
+
+### Changed
+
+- Perplexity upgraded from generic OpenAI-compatible adapter to dedicated native provider
+- `perplexity/sonar-pro` added to model naming examples in README
+
 ## [0.3.0] - 2026-03-15
 
 ### Added

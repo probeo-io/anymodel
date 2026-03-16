@@ -81,6 +81,7 @@ mistral/mistral-large-latest
 groq/llama-3.3-70b-versatile
 deepseek/deepseek-chat
 xai/grok-3
+perplexity/sonar-pro
 ollama/llama3.3
 ```
 
@@ -435,6 +436,11 @@ npx tsx examples/basic.ts batch
 - [x] **Native batch APIs** — OpenAI Batch API (JSONL upload, 50% cost) and Anthropic Message Batches (10K requests, async). Auto-detects provider and routes to native API, falls back to concurrent for other providers
 - [ ] **Result export** — `saveResults()` to write batch results to a configurable output directory
 - [ ] **Prompt logging** — optional request/response logging for debugging and evaluation
+
+## Also Available
+
+- **Python**: [`anymodel-py`](https://github.com/probeo-io/anymodel-py) on PyPI
+- **Go**: [`anymodel-go`](https://github.com/probeo-io/anymodel-go)
 
 ## License
 

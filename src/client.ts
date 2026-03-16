@@ -14,6 +14,7 @@ import { Router } from './router.js';
 import { createOpenAIAdapter } from './providers/openai.js';
 import { createAnthropicAdapter } from './providers/anthropic.js';
 import { createGoogleAdapter } from './providers/google.js';
+import { createPerplexityAdapter } from './providers/perplexity.js';
 import { createCustomAdapter } from './providers/custom.js';
 import { resolveConfig } from './config.js';
 import { GenerationStatsStore } from './utils/generation-stats.js';
@@ -169,6 +170,12 @@ export class AnyModel {
       this.registry.register('google', createGoogleAdapter(googleKey));
     }
 
+    // Perplexity — native adapter
+    const perplexityKey = config.perplexity?.apiKey || process.env.PERPLEXITY_API_KEY;
+    if (perplexityKey) {
+      this.registry.register('perplexity', createPerplexityAdapter(perplexityKey));
+    }
+
     // Built-in OpenAI-compatible providers
     const builtinProviders: Array<{
       name: string;
@@ -182,7 +189,6 @@ export class AnyModel {
       { name: 'xai', baseURL: 'https://api.x.ai/v1', configKey: 'xai', envVar: 'XAI_API_KEY' },
       { name: 'together', baseURL: 'https://api.together.xyz/v1', configKey: 'together', envVar: 'TOGETHER_API_KEY' },
       { name: 'fireworks', baseURL: 'https://api.fireworks.ai/inference/v1', configKey: 'fireworks', envVar: 'FIREWORKS_API_KEY' },
-      { name: 'perplexity', baseURL: 'https://api.perplexity.ai', configKey: 'perplexity', envVar: 'PERPLEXITY_API_KEY' },
     ];
 
     for (const { name, baseURL, configKey, envVar } of builtinProviders) {
