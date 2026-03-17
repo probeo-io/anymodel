@@ -58,7 +58,7 @@ export class BatchManager {
     const id = generateId('batch');
     const now = new Date().toISOString();
     const providerName = request.model.split('/')[0] || 'unknown';
-    const native = this.getNativeBatchAdapter(request.model);
+    const native = request.batch_mode !== 'concurrent' ? this.getNativeBatchAdapter(request.model) : null;
     const batchMode = native ? 'native' as const : 'concurrent' as const;
 
     const batch: BatchObject = {

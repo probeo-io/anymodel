@@ -240,6 +240,8 @@ export interface BatchRequestItem {
 export interface BatchCreateRequest {
   model: string;
   requests: BatchRequestItem[];
+  /** Force batch mode: 'native' uses provider batch API, 'concurrent' sends individual requests. Auto-detected if omitted. */
+  batch_mode?: 'native' | 'concurrent';
   options?: {
     temperature?: number;
     max_tokens?: number;
