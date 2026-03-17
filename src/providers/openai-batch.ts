@@ -59,6 +59,7 @@ export function createOpenAIBatchAdapter(apiKey: string): BatchAdapter {
       if (req.response_format !== undefined) body.response_format = req.response_format;
       if (req.tools !== undefined) body.tools = req.tools;
       if (req.tool_choice !== undefined) body.tool_choice = req.tool_choice;
+      // service_tier intentionally omitted — native batch already gets 50% off
 
       return JSON.stringify({
         custom_id: req.custom_id,

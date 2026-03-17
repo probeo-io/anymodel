@@ -234,6 +234,7 @@ export interface BatchRequestItem {
   response_format?: ResponseFormat;
   tools?: Tool[];
   tool_choice?: ToolChoice;
+  service_tier?: 'auto' | 'flex';
 }
 
 export interface BatchCreateRequest {
@@ -248,6 +249,7 @@ export interface BatchCreateRequest {
     response_format?: ResponseFormat;
     tools?: Tool[];
     tool_choice?: ToolChoice;
+    service_tier?: 'auto' | 'flex';
   };
   webhook?: string;
 }

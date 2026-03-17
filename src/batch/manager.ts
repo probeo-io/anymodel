@@ -332,6 +332,7 @@ export class BatchManager {
         response_format: item.response_format ?? (options as any)?.response_format,
         tools: item.tools ?? (options as any)?.tools,
         tool_choice: item.tool_choice ?? (options as any)?.tool_choice,
+        service_tier: item.service_tier ?? (options as any)?.service_tier,
       };
 
       let result: BatchResultItem;
