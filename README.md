@@ -444,6 +444,7 @@ npx tsx examples/basic.ts batch
 - **Rate limit tracking**: Per-provider rate limit state, automatically skips rate-limited providers during fallback routing
 - **Parameter stripping**: Unsupported parameters are automatically removed before forwarding to providers
 - **Smart batch defaults**: Automatic `max_tokens` estimation per-request in batches — calculates safe values from input size and model context limits, preventing truncation and overflow without manual tuning
+- **Memory-efficient batching**: Concurrent batch requests are streamed from disk — only N requests (default 5) are in-flight at a time, making 10K+ request batches safe without memory spikes
 - **High-volume IO**: All batch file operations use concurrency-limited async queues with atomic durable writes (temp file + fsync + rename) to prevent corruption on crash. Defaults: 20 concurrent reads, 10 concurrent writes — configurable via `io.readConcurrency` and `io.writeConcurrency`
 
 ## Roadmap

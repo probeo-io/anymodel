@@ -132,6 +132,18 @@ export class BatchStore {
   }
 
   /**
+   * Stream requests from JSONL one line at a time (memory-efficient).
+   */
+  async *streamRequests(id: string): AsyncGenerator<unknown> {
+    const p = joinPath(this.batchDir(id), 'requests.jsonl');
+    if (!(await fileExistsQueued(p))) return;
+    const raw = (await readFileQueued(p, 'utf8')) as string;
+    for (const line of raw.split('\n')) {
+      if (line.trim()) yield JSON.parse(line);
+    }
+  }
+
+  /**
    * Check if a batch exists.
    */
   async exists(id: string): Promise<boolean> {

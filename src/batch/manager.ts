@@ -82,7 +82,7 @@ export class BatchManager {
     if (native) {
       this.processNativeBatch(id, request, native.adapter).catch(() => {});
     } else {
-      this.processConcurrentBatch(id, request).catch(() => {});
+      this.processConcurrentBatch(id, request.model, request.options as Record<string, unknown> | undefined).catch(() => {});
     }
 
     return batch;
@@ -307,31 +307,31 @@ export class BatchManager {
 
   /**
    * Process batch requests concurrently (fallback path).
+   * Streams requests from disk to avoid holding them all in memory.
    */
-  private async processConcurrentBatch(batchId: string, request: BatchCreateRequest): Promise<void> {
+  private async processConcurrentBatch(batchId: string, model: string, options?: Record<string, unknown>): Promise<void> {
     const batch = await this.store.getMeta(batchId);
     if (!batch) return;
     batch.status = 'processing';
     await this.store.updateMeta(batch);
 
-    const items = request.requests;
     const active = new Set<Promise<void>>();
 
-    const processItem = async (item: typeof items[0]): Promise<void> => {
+    const processItem = async (item: any): Promise<void> => {
       const current = await this.store.getMeta(batchId);
       if (current?.status === 'cancelled') return;
 
       const chatRequest: ChatCompletionRequest = {
-        model: request.model,
+        model,
         messages: item.messages,
-        max_tokens: item.max_tokens ?? request.options?.max_tokens,
-        temperature: item.temperature ?? request.options?.temperature,
-        top_p: item.top_p ?? request.options?.top_p,
-        top_k: item.top_k ?? request.options?.top_k,
-        stop: item.stop ?? request.options?.stop,
-        response_format: item.response_format ?? request.options?.response_format,
-        tools: item.tools ?? request.options?.tools,
-        tool_choice: item.tool_choice ?? request.options?.tool_choice,
+        max_tokens: item.max_tokens ?? (options as any)?.max_tokens,
+        temperature: item.temperature ?? (options as any)?.temperature,
+        top_p: item.top_p ?? (options as any)?.top_p,
+        top_k: item.top_k ?? (options as any)?.top_k,
+        stop: item.stop ?? (options as any)?.stop,
+        response_format: item.response_format ?? (options as any)?.response_format,
+        tools: item.tools ?? (options as any)?.tools,
+        tool_choice: item.tool_choice ?? (options as any)?.tool_choice,
       };
 
       let result: BatchResultItem;
@@ -366,7 +366,8 @@ export class BatchManager {
       }
     };
 
-    for (const item of items) {
+    // Stream requests from disk instead of holding all in memory
+    for await (const item of this.store.streamRequests(batchId)) {
       const current = await this.store.getMeta(batchId);
       if (current?.status === 'cancelled') break;
 

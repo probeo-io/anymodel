@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - 2026-03-17
+
+### Changed
+
+- Concurrent batch processing now streams requests from disk instead of holding all in memory — safe for 10K+ request batches
+- Batch concurrency gating improved: only N requests (default 5) are in-flight at a time, the rest stay on disk until needed
+
 ## [0.5.0] - 2026-03-17
 
 ### Added
