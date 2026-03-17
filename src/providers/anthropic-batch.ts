@@ -2,6 +2,8 @@ import type { BatchAdapter, NativeBatchStatus } from './adapter.js';
 import type { BatchRequestItem, BatchResultItem, ChatCompletion, Message, ToolCall } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
+import { resolveMaxTokens } from '../utils/token-estimate.js';
+import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -18,7 +20,7 @@ export function createAnthropicBatchAdapter(apiKey: string): BatchAdapter {
       'Content-Type': 'application/json',
     };
 
-    const res = await fetch(`${ANTHROPIC_API_BASE}${path}`, {
+    const res = await fetchWithTimeout(`${ANTHROPIC_API_BASE}${path}`, {
       method: options.method || 'GET',
       headers,
       body: options.body ? JSON.stringify(options.body) : undefined,
@@ -40,7 +42,7 @@ export function createAnthropicBatchAdapter(apiKey: string): BatchAdapter {
   function translateToAnthropicParams(model: string, req: BatchRequestItem): Record<string, unknown> {
     const params: Record<string, unknown> = {
       model,
-      max_tokens: req.max_tokens || DEFAULT_MAX_TOKENS,
+      max_tokens: resolveMaxTokens(model, req.messages, req.max_tokens || DEFAULT_MAX_TOKENS),
     };
 
     // Extract system messages

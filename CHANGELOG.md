@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-03-17
+
+### Added
+
+- Native batch API support for Google Gemini via `batchGenerateContent` (50% cost reduction)
+- `GoogleBatchAdapter` with inline and file-based result handling
+- Google batch status polling with `JOB_STATE_*` mapping
+- Google batch cancellation support
+- Automatic `max_tokens` estimation for batch requests — when not explicitly set, calculates a safe value per-request based on estimated input token count and model context/completion limits (~4 chars/token heuristic with 5% safety margin)
+- `resolveMaxTokens()` and `estimateTokenCount()` exported utilities for manual use
+- Model limits lookup table covering OpenAI, Anthropic, and Google model families
+- OpenAI `service_tier` support — set `service_tier: "flex"` on requests for 50% cost reduction with flexible latency
+- Configurable HTTP request timeout — 2 minutes default for normal requests, 10 minutes for flex (`service_tier: "flex"`) requests, both settable via `setDefaultTimeout()` and `setFlexTimeout()`
+
+### Changed
+
+- Google adapter `supportsBatch()` now returns `true`
+- README updated to reflect Google as a native batch provider
+
 ## [0.4.0] - 2026-03-16
 
 ### Added

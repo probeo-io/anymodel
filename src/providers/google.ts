@@ -10,6 +10,7 @@ import type {
 } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
+import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -262,7 +263,7 @@ export function createGoogleAdapter(apiKey: string): ProviderAdapter {
 
     async listModels(): Promise<ModelInfo[]> {
       try {
-        const res = await fetch(`${GEMINI_API_BASE}/models?key=${apiKey}`);
+        const res = await fetchWithTimeout(`${GEMINI_API_BASE}/models?key=${apiKey}`);
 
         if (!res.ok) return FALLBACK_MODELS;
 
@@ -304,13 +305,13 @@ export function createGoogleAdapter(apiKey: string): ProviderAdapter {
     },
 
     supportsBatch(): boolean {
-      return false;
+      return true;
     },
 
     async sendRequest(request: ChatCompletionRequest): Promise<ChatCompletion> {
       const body = translateRequest(request);
       const url = getModelEndpoint(request.model, false);
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -329,7 +330,7 @@ export function createGoogleAdapter(apiKey: string): ProviderAdapter {
     async sendStreamingRequest(request: ChatCompletionRequest): Promise<AsyncIterable<ChatCompletionChunk>> {
       const body = translateRequest(request);
       const url = getModelEndpoint(request.model, true);
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

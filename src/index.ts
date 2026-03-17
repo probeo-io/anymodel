@@ -86,3 +86,7 @@ export {
 export type { ProviderAdapter, BatchAdapter, NativeBatchStatus } from './providers/adapter.js';
 export { createOpenAIBatchAdapter } from './providers/openai-batch.js';
 export { createAnthropicBatchAdapter } from './providers/anthropic-batch.js';
+export { createGoogleBatchAdapter } from './providers/google-batch.js';
+
+// Token estimation
+export { resolveMaxTokens, estimateTokenCount } from './utils/token-estimate.js';

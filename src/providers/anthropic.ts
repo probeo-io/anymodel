@@ -10,6 +10,7 @@ import type {
 } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
+import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -35,7 +36,7 @@ const FALLBACK_MODELS: ModelInfo[] = [
 
 export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
   async function makeRequest(path: string, body: unknown, stream = false): Promise<Response> {
-    const res = await fetch(`${ANTHROPIC_API_BASE}${path}`, {
+    const res = await fetchWithTimeout(`${ANTHROPIC_API_BASE}${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -314,7 +315,7 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
 
     async listModels(): Promise<ModelInfo[]> {
       try {
-        const res = await fetch(`${ANTHROPIC_API_BASE}/models`, {
+        const res = await fetchWithTimeout(`${ANTHROPIC_API_BASE}/models`, {
           method: 'GET',
           headers: {
             'x-api-key': apiKey,

@@ -85,6 +85,18 @@ perplexity/sonar-pro
 ollama/llama3.3
 ```
 
+### Flex Pricing (OpenAI)
+
+Get 50% off OpenAI requests with flexible latency:
+
+```typescript
+const response = await client.chat.completions.create({
+  model: "openai/gpt-4o",
+  messages: [{ role: "user", content: "Hello!" }],
+  service_tier: "flex",
+});
+```
+
 ## Fallback Routing
 
 Try multiple models in order. If one fails, the next is attempted:
@@ -148,7 +160,7 @@ const response = await client.chat.completions.create({
 
 ## Batch Processing
 
-Process many requests with native provider batch APIs or concurrent fallback. OpenAI and Anthropic batches are processed server-side — OpenAI at 50% cost, Anthropic with async processing for up to 10K requests. Other providers fall back to concurrent execution automatically.
+Process many requests with native provider batch APIs or concurrent fallback. OpenAI, Anthropic, and Google batches are processed server-side — OpenAI at 50% cost, Anthropic with async processing for up to 10K requests, Google at 50% cost via `batchGenerateContent`. Other providers fall back to concurrent execution automatically.
 
 ### Submit and wait
 
@@ -169,7 +181,7 @@ for (const result of results.results) {
 
 ### Submit now, check later
 
-Submit a batch and get back an ID immediately — no need to keep the process running for native batches (OpenAI, Anthropic):
+Submit a batch and get back an ID immediately — no need to keep the process running for native batches (OpenAI, Anthropic, Google):
 
 ```typescript
 // Submit and get the batch ID
@@ -232,6 +244,10 @@ const results = await client.batches.createAndPoll(request, {
 
 Batches are persisted to `./.anymodel/batches/` in the current working directory and survive process restarts.
 
+### Automatic max_tokens
+
+When `max_tokens` isn't set on a batch request, anymodel automatically calculates a safe value per-request based on the estimated input size and the model's context window. This prevents truncated responses and context overflow errors without requiring you to hand-tune each request in a large batch. The estimation uses a ~4 chars/token heuristic with a 5% safety margin — conservative enough to avoid overflows, lightweight enough to skip tokenizer dependencies.
+
 ## Models Endpoint
 
 ```typescript
@@ -265,6 +281,7 @@ const client = new AnyModel({
     temperature: 0.7,
     max_tokens: 4096,
     retries: 2,
+    timeout: 120, // HTTP timeout in seconds (default: 120 = 2 min, flex: 600 = 10 min)
   },
 });
 
@@ -426,6 +443,7 @@ npx tsx examples/basic.ts batch
 - **Retries**: Automatic retry with exponential backoff on 429/502/503 errors (configurable via `defaults.retries`)
 - **Rate limit tracking**: Per-provider rate limit state, automatically skips rate-limited providers during fallback routing
 - **Parameter stripping**: Unsupported parameters are automatically removed before forwarding to providers
+- **Smart batch defaults**: Automatic `max_tokens` estimation per-request in batches — calculates safe values from input size and model context limits, preventing truncation and overflow without manual tuning
 - **High-volume IO**: All batch file operations use concurrency-limited async queues with atomic durable writes (temp file + fsync + rename) to prevent corruption on crash. Defaults: 20 concurrent reads, 10 concurrent writes — configurable via `io.readConcurrency` and `io.writeConcurrency`
 
 ## Roadmap
@@ -433,7 +451,7 @@ npx tsx examples/basic.ts batch
 - [ ] **A/B testing** — split routing (% traffic to each model) and compare mode (same request to multiple models, return all responses with stats)
 - [ ] **Cost tracking** — per-request and aggregate cost calculation from provider pricing
 - [ ] **Caching** — response caching with configurable TTL for identical requests
-- [x] **Native batch APIs** — OpenAI Batch API (JSONL upload, 50% cost) and Anthropic Message Batches (10K requests, async). Auto-detects provider and routes to native API, falls back to concurrent for other providers
+- [x] **Native batch APIs** — OpenAI Batch API (JSONL upload, 50% cost), Anthropic Message Batches (10K requests, async), and Google Gemini Batch (50% cost). Auto-detects provider and routes to native API, falls back to concurrent for other providers
 - [ ] **Result export** — `saveResults()` to write batch results to a configurable output directory
 - [ ] **Prompt logging** — optional request/response logging for debugging and evaluation
 

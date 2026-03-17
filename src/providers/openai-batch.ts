@@ -2,6 +2,8 @@ import type { BatchAdapter, NativeBatchStatus } from './adapter.js';
 import type { BatchRequestItem, BatchResultItem, ChatCompletion } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
+import { resolveMaxTokens } from '../utils/token-estimate.js';
+import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
@@ -23,7 +25,7 @@ export function createOpenAIBatchAdapter(apiKey: string): BatchAdapter {
       fetchBody = JSON.stringify(options.body);
     }
 
-    const res = await fetch(`${OPENAI_API_BASE}${path}`, {
+    const res = await fetchWithTimeout(`${OPENAI_API_BASE}${path}`, {
       method: options.method || 'GET',
       headers,
       body: fetchBody,
@@ -48,7 +50,9 @@ export function createOpenAIBatchAdapter(apiKey: string): BatchAdapter {
         model,
         messages: req.messages,
       };
-      if (req.max_tokens !== undefined) body.max_tokens = req.max_tokens;
+      body.max_tokens = req.max_tokens !== undefined
+        ? req.max_tokens
+        : resolveMaxTokens(model, req.messages);
       if (req.temperature !== undefined) body.temperature = req.temperature;
       if (req.top_p !== undefined) body.top_p = req.top_p;
       if (req.stop !== undefined) body.stop = req.stop;

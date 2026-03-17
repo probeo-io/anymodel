@@ -8,6 +8,7 @@ import type {
 } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
+import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 
 const PERPLEXITY_API_BASE = 'https://api.perplexity.ai';
 
@@ -35,7 +36,7 @@ const MODELS: Array<{
 
 export function createPerplexityAdapter(apiKey: string): ProviderAdapter {
   async function makeRequest(path: string, body?: unknown, method = 'POST'): Promise<Response> {
-    const res = await fetch(`${PERPLEXITY_API_BASE}${path}`, {
+    const res = await fetchWithTimeout(`${PERPLEXITY_API_BASE}${path}`, {
       method,
       headers: {
         'Content-Type': 'application/json',

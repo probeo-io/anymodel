@@ -21,7 +21,9 @@ import { GenerationStatsStore } from './utils/generation-stats.js';
 import { BatchManager, type BatchPollOptions } from './batch/manager.js';
 import { createOpenAIBatchAdapter } from './providers/openai-batch.js';
 import { createAnthropicBatchAdapter } from './providers/anthropic-batch.js';
+import { createGoogleBatchAdapter } from './providers/google-batch.js';
 import { configureFsIO } from './utils/fs-io.js';
+import { setDefaultTimeout } from './utils/fetch-with-timeout.js';
 
 export class AnyModel {
   private registry: ProviderRegistry;
@@ -60,6 +62,9 @@ export class AnyModel {
   constructor(config: AnyModelConfig = {}) {
     this.config = resolveConfig(config);
     this.registry = new ProviderRegistry();
+
+    // Configure HTTP request timeout (config is in seconds, convert to ms)
+    setDefaultTimeout((this.config.defaults?.timeout ?? 120) * 1000);
 
     // Configure filesystem IO concurrency
     if (this.config.io) {
@@ -225,6 +230,11 @@ export class AnyModel {
     const anthropicKey = config.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY;
     if (anthropicKey) {
       this.batchManager.registerBatchAdapter('anthropic', createAnthropicBatchAdapter(anthropicKey));
+    }
+
+    const googleKey = config.google?.apiKey || process.env.GOOGLE_API_KEY;
+    if (googleKey) {
+      this.batchManager.registerBatchAdapter('google', createGoogleBatchAdapter(googleKey));
     }
   }
 

@@ -82,6 +82,7 @@ export interface ChatCompletionRequest {
   tools?: Tool[];
   tool_choice?: ToolChoice;
   user?: string;
+  service_tier?: 'auto' | 'flex';
 
   // Anymodel-specific (mirrors OpenRouter)
   models?: string[];

@@ -8,27 +8,28 @@ import type {
 } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
+import { fetchWithTimeout, getFlexTimeout } from '../utils/fetch-with-timeout.js';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
 const SUPPORTED_PARAMS = new Set([
   'temperature', 'max_tokens', 'top_p', 'frequency_penalty', 'presence_penalty',
   'seed', 'stop', 'stream', 'logprobs', 'top_logprobs', 'response_format',
-  'tools', 'tool_choice', 'user', 'logit_bias',
+  'tools', 'tool_choice', 'user', 'logit_bias', 'service_tier',
 ]);
 
 export function createOpenAIAdapter(apiKey: string, baseURL?: string): ProviderAdapter {
   const base = baseURL || OPENAI_API_BASE;
 
-  async function makeRequest(path: string, body?: unknown, method = 'POST'): Promise<Response> {
-    const res = await fetch(`${base}${path}`, {
+  async function makeRequest(path: string, body?: unknown, method = 'POST', timeoutMs?: number): Promise<Response> {
+    const res = await fetchWithTimeout(`${base}${path}`, {
       method,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
       body: body ? JSON.stringify(body) : undefined,
-    });
+    }, timeoutMs);
 
     if (!res.ok) {
       let errorBody: any;
@@ -83,6 +84,7 @@ export function createOpenAIAdapter(apiKey: string, baseURL?: string): ProviderA
     if (request.tools !== undefined) body.tools = request.tools;
     if (request.tool_choice !== undefined) body.tool_choice = request.tool_choice;
     if (request.user !== undefined) body.user = request.user;
+    if (request.service_tier !== undefined) body.service_tier = request.service_tier;
 
     return body;
   }
@@ -201,14 +203,16 @@ export function createOpenAIAdapter(apiKey: string, baseURL?: string): ProviderA
 
     async sendRequest(request: ChatCompletionRequest): Promise<ChatCompletion> {
       const body = buildRequestBody(request);
-      const res = await makeRequest('/chat/completions', body);
+      const timeout = request.service_tier === 'flex' ? getFlexTimeout() : undefined;
+      const res = await makeRequest('/chat/completions', body, 'POST', timeout);
       const json = await res.json();
       return adapter.translateResponse(json);
     },
 
     async sendStreamingRequest(request: ChatCompletionRequest): Promise<AsyncIterable<ChatCompletionChunk>> {
       const body = buildRequestBody({ ...request, stream: true });
-      const res = await makeRequest('/chat/completions', body);
+      const timeout = request.service_tier === 'flex' ? getFlexTimeout() : undefined;
+      const res = await makeRequest('/chat/completions', body, 'POST', timeout);
       if (!res.body) {
         throw new AnyModelError(502, 'No response body for streaming request', {
           provider_name: 'openai',
