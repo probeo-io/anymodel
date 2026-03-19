@@ -90,3 +90,7 @@ export { createGoogleBatchAdapter } from './providers/google-batch.js';
 
 // Token estimation
 export { resolveMaxTokens, estimateTokenCount } from './utils/token-estimate.js';
+
+// Pricing
+export { getModelPricing, calculateCost, PRICING_AS_OF, PRICING_MODEL_COUNT } from './generated/pricing.js';
+export type { PricingEntry } from './generated/pricing.js';

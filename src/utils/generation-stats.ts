@@ -1,4 +1,5 @@
 import type { GenerationStats, FinishReason } from '../types.js';
+import { calculateCost } from '../generated/pricing.js';
 
 export interface GenerationRecord {
   id: string;
@@ -42,7 +43,7 @@ export class GenerationStatsStore {
       id: rec.id,
       model: rec.model,
       provider_name: rec.providerName,
-      total_cost: 0, // Cost calculation requires pricing data
+      total_cost: calculateCost(rec.model, rec.promptTokens, rec.completionTokens),
       tokens_prompt: rec.promptTokens,
       tokens_completion: rec.completionTokens,
       latency,

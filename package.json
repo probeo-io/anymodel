@@ -1,6 +1,6 @@
 {
   "name": "@probeo/anymodel",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "description": "OpenRouter-compatible LLM router with unified batch support. Self-hosted, zero fees.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -20,6 +20,7 @@
     "dist"
   ],
   "scripts": {
+    "prebuild": "npx tsx scripts/fetch-pricing.ts",
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",

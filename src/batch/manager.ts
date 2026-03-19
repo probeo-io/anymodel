@@ -8,6 +8,7 @@ import type {
 } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
+import { calculateCost } from '../generated/pricing.js';
 import { BatchStore } from './store.js';
 import type { Router } from '../router.js';
 import type { BatchAdapter } from '../providers/adapter.js';
@@ -164,6 +165,11 @@ export class BatchManager {
       if (result.response) {
         usage.total_prompt_tokens += result.response.usage.prompt_tokens;
         usage.total_completion_tokens += result.response.usage.completion_tokens;
+        usage.estimated_cost += calculateCost(
+          result.response.model || batch.model,
+          result.response.usage.prompt_tokens,
+          result.response.usage.completion_tokens,
+        );
       }
     }
 
