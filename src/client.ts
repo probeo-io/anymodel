@@ -19,6 +19,7 @@ import { createCustomAdapter } from './providers/custom.js';
 import { resolveConfig } from './config.js';
 import { GenerationStatsStore } from './utils/generation-stats.js';
 import { BatchManager, type BatchPollOptions } from './batch/manager.js';
+import { BatchBuilder, type BatchBuilderConfig, type BatchBuilderResults } from './batch/builder.js';
 import { createOpenAIBatchAdapter } from './providers/openai-batch.js';
 import { createAnthropicBatchAdapter } from './providers/anthropic-batch.js';
 import { createGoogleBatchAdapter } from './providers/google-batch.js';
@@ -50,6 +51,8 @@ export class AnyModel {
   };
 
   public readonly batches: {
+    /** Open a batch builder for incremental prompt addition. */
+    open: (config: BatchBuilderConfig) => BatchBuilder;
     create: (request: BatchCreateRequest) => Promise<BatchObject>;
     createAndPoll: (request: BatchCreateRequest, options?: BatchPollOptions) => Promise<BatchResults>;
     poll: (id: string, options?: BatchPollOptions) => Promise<BatchResults>;
@@ -144,6 +147,7 @@ export class AnyModel {
     this.registerBatchAdapters();
 
     this.batches = {
+      open: (config) => new BatchBuilder(config, this.batchManager.getStore(), this.batchManager),
       create: (request) => this.batchManager.create(request),
       createAndPoll: (request, options) => this.batchManager.createAndPoll(request, options),
       poll: (id, options) => this.batchManager.poll(id, options),

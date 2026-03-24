@@ -20,6 +20,8 @@ export interface BatchPollOptions {
   timeout?: number;
   /** Progress callback */
   onProgress?: (batch: BatchObject) => void;
+  /** Log polling progress to console. Default: false (or true when ANYMODEL_BATCH_POLL_LOG=1/true) */
+  logToConsole?: boolean;
 }
 
 export class BatchManager {
@@ -34,6 +36,11 @@ export class BatchManager {
     this.router = router;
     this.concurrencyLimit = options?.concurrency ?? 5;
     this.defaultPollInterval = options?.pollInterval ?? 5000;
+  }
+
+  /** Expose the store for use by BatchBuilder. */
+  getStore(): BatchStore {
+    return this.store;
   }
 
   /**
@@ -107,6 +114,8 @@ export class BatchManager {
     const interval = options.interval ?? this.defaultPollInterval;
     const timeout = options.timeout ?? 0;
     const startTime = Date.now();
+    const envLog = String(process.env.ANYMODEL_BATCH_POLL_LOG || '').trim().toLowerCase();
+    const logToConsole = options.logToConsole ?? (envLog === '1' || envLog === 'true' || envLog === 'yes');
 
     while (true) {
       let batch = await this.store.getMeta(id);
@@ -123,6 +132,11 @@ export class BatchManager {
 
       if (options.onProgress) {
         options.onProgress(batch);
+      }
+      if (logToConsole) {
+        console.log(
+          `[anymodel][batch.poll] id=${batch.id} status=${batch.status} mode=${batch.batch_mode} progress=${batch.completed}/${batch.total} failed=${batch.failed}`,
+        );
       }
 
       if (batch.status === 'completed' || batch.status === 'failed' || batch.status === 'cancelled') {

@@ -67,6 +67,19 @@ export class BatchStore {
   }
 
   /**
+   * Append a single request to requests.jsonl (used by BatchBuilder for incremental adds).
+   */
+  async appendRequest(id: string, request: unknown): Promise<void> {
+    await this.init();
+    const dir = this.batchDir(id);
+    await ensureDir(dir);
+    await appendFileQueued(
+      joinPath(dir, 'requests.jsonl'),
+      JSON.stringify(request) + '\n',
+    );
+  }
+
+  /**
    * Append a result to results.jsonl.
    */
   async appendResult(id: string, result: BatchResultItem): Promise<void> {

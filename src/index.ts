@@ -62,8 +62,8 @@ export { resolveConfig } from './config.js';
 export { GenerationStatsStore } from './utils/generation-stats.js';
 
 // Batch
-export { BatchManager, BatchStore } from './batch/index.js';
-export type { BatchPollOptions } from './batch/index.js';
+export { BatchManager, BatchStore, BatchBuilder } from './batch/index.js';
+export type { BatchPollOptions, BatchBuilderConfig, BatchBuilderResults, BatchBuilderSuccessItem, BatchBuilderFailedItem } from './batch/index.js';
 
 // Server
 export { createAnyModelServer, startServer } from './server.js';
