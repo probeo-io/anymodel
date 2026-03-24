@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-03-24
+
+### Added
+
+- **BatchBuilder API** — ergonomic batch construction with `client.batches.open(config)`
+  - `add(prompt)` persists to disk immediately, caller just passes strings
+  - `submit()` formats and dispatches to provider (Anthropic/OpenAI/Google format handled automatically)
+  - `poll()` returns clean `succeeded`/`failed` results with per-item costs
+  - `retry(failed)` creates a new builder pre-loaded with failed items
+  - Auto-generated IDs, system prompt injection, provider-specific formatting all hidden
+- Poll logging: `logToConsole` option and `ANYMODEL_BATCH_POLL_LOG` env var
+
 ## [0.6.0] - 2026-03-19
 
 ### Added
