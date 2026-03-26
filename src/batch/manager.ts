@@ -175,6 +175,9 @@ export class BatchManager {
       estimated_cost: 0,
     };
 
+    // Native batch APIs (OpenAI, Anthropic, Google) are 50% off list price
+    const batchDiscount = batch.batch_mode === 'native' ? 0.5 : 1;
+
     for (const result of results) {
       if (result.response) {
         usage.total_prompt_tokens += result.response.usage.prompt_tokens;
@@ -183,7 +186,7 @@ export class BatchManager {
           result.response.model || batch.model,
           result.response.usage.prompt_tokens,
           result.response.usage.completion_tokens,
-        );
+        ) * batchDiscount;
       }
     }
 

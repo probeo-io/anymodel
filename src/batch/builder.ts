@@ -260,6 +260,10 @@ export class BatchBuilder {
     let totalCompletionTokens = 0;
     let totalCost = 0;
 
+    // Native batch APIs are 50% off; concurrent with flex is also 50% off
+    const isNativeBatch = this.config.batch_mode !== 'concurrent';
+    const discount = isNativeBatch ? 0.5 : (this.config.service_tier === 'flex' ? 0.5 : 1);
+
     for (const result of raw.results) {
       if (result.status === 'success' && result.response) {
         const promptTokens = result.response.usage?.prompt_tokens || 0;
@@ -268,7 +272,7 @@ export class BatchBuilder {
           result.response.model || this.config.model,
           promptTokens,
           completionTokens,
-        );
+        ) * discount;
 
         totalPromptTokens += promptTokens;
         totalCompletionTokens += completionTokens;
