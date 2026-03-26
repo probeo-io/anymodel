@@ -219,6 +219,75 @@ for (const b of all) {
 await client.batches.cancel("batch-abc123");
 ```
 
+### BatchBuilder API
+
+An ergonomic interface for building batches — just pass strings, and anymodel handles IDs, system prompt injection, and provider-specific formatting:
+
+```typescript
+const batch = client.batches.open({
+  model: "anthropic/claude-sonnet-4-6",
+  system: "You are an expert.",
+});
+
+batch.add("What is an LLC?");
+batch.add("How do I dissolve an LLC?");
+
+await batch.submit();
+const results = await batch.poll();
+
+console.log(results.succeeded); // successful responses with per-item costs
+console.log(results.failed);    // failed items
+console.log(results.usage);     // aggregate usage and estimated_cost
+
+// Retry failed items
+const retryBatch = batch.retry(results.failed);
+await retryBatch.submit();
+const retryResults = await retryBatch.poll();
+```
+
+### Batch mode
+
+Force concurrent execution instead of native batch APIs (useful when you want flex pricing on individual requests):
+
+```typescript
+const results = await client.batches.createAndPoll({
+  model: "openai/gpt-4o",
+  batch_mode: "concurrent", // skip native batch, run as individual requests
+  requests: [
+    { custom_id: "req-1", messages: [{ role: "user", content: "Hello" }] },
+  ],
+});
+```
+
+### Service tier on batch requests
+
+Use flex pricing on concurrent batches for 50% cost savings:
+
+```typescript
+const results = await client.batches.createAndPoll({
+  model: "openai/gpt-4o",
+  batch_mode: "concurrent",
+  service_tier: "flex", // flex pricing on each concurrent request
+  requests: [
+    { custom_id: "req-1", messages: [{ role: "user", content: "Hello" }] },
+  ],
+});
+```
+
+### Poll logging
+
+Enable console logging during batch polling to monitor progress:
+
+```typescript
+// Per-call option
+const results = await client.batches.createAndPoll(request, {
+  logToConsole: true,
+});
+
+// Or enable globally via environment variable
+// ANYMODEL_BATCH_POLL_LOG=1
+```
+
 ### Batch configuration
 
 ```typescript
@@ -261,6 +330,25 @@ const anthropicModels = await client.models.list({ provider: "anthropic" });
 const response = await client.chat.completions.create({ ... });
 const stats = client.generation.get(response.id);
 console.log(stats.latency, stats.tokens_prompt, stats.tokens_completion);
+console.log(stats.total_cost); // auto-calculated from bundled pricing data
+```
+
+### Auto Pricing / Cost Calculation
+
+Pricing for 323 models is baked in at build time from OpenRouter — always current as of last publish. Costs are calculated automatically from token usage with no configuration needed.
+
+```typescript
+// Per-request cost on GenerationStats
+const stats = client.generation.get(response.id);
+console.log(stats.total_cost); // e.g. 0.0023
+
+// Batch-level cost on BatchUsageSummary
+const results = await client.batches.createAndPoll(request);
+console.log(results.usage.estimated_cost); // total across all requests
+
+// Native batch pricing is automatically 50% off
+// Utility functions also exported
+import { getModelPricing, calculateCost, PRICING_AS_OF, PRICING_MODEL_COUNT } from "@probeo/anymodel";
 ```
 
 ## Configuration
@@ -450,7 +538,7 @@ npx tsx examples/basic.ts batch
 ## Roadmap
 
 - [ ] **A/B testing** — split routing (% traffic to each model) and compare mode (same request to multiple models, return all responses with stats)
-- [ ] **Cost tracking** — per-request and aggregate cost calculation from provider pricing
+- [x] **Cost tracking** — per-request and aggregate cost calculation from bundled pricing data (323 models from OpenRouter)
 - [ ] **Caching** — response caching with configurable TTL for identical requests
 - [x] **Native batch APIs** — OpenAI Batch API (JSONL upload, 50% cost), Anthropic Message Batches (10K requests, async), and Google Gemini Batch (50% cost). Auto-detects provider and routes to native API, falls back to concurrent for other providers
 - [ ] **Result export** — `saveResults()` to write batch results to a configurable output directory
