@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.1] - 2026-03-26
+
+### Fixed
+
+- Batch cost calculations now apply 50% discount for native batch APIs (OpenAI, Anthropic, Google)
+- BatchBuilder accounts for flex pricing discount on concurrent batches
+
 ## [0.7.0] - 2026-03-24
 
 ### Added
