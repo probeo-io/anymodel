@@ -544,10 +544,14 @@ npx tsx examples/basic.ts batch
 - [ ] **Result export** — `saveResults()` to write batch results to a configurable output directory
 - [ ] **Prompt logging** — optional request/response logging for debugging and evaluation
 
-## Also Available
+## See Also
 
-- **Python**: [`anymodel-py`](https://github.com/probeo-io/anymodel-py) on PyPI
-- **Go**: [`anymodel-go`](https://github.com/probeo-io/anymodel-go)
+| Package | Description |
+|---|---|
+| [anymodel-py](https://github.com/probeo-io/anymodel-py) | Python version of this package |
+| [anymodel-go](https://github.com/probeo-io/anymodel-go) | Go version of this package |
+| [@probeo/anyserp](https://github.com/probeo-io/anyserp) | Unified SERP API router for TypeScript |
+| [@probeo/workflow](https://github.com/probeo-io/workflow) | Stage-based pipeline engine for TypeScript |
 
 ## License
 
