@@ -288,6 +288,31 @@ const results = await client.batches.createAndPoll(request, {
 // ANYMODEL_BATCH_POLL_LOG=1
 ```
 
+### Adaptive Concurrency
+
+For concurrent batches, anymodel can automatically discover your provider's rate limit ceiling instead of using a fixed concurrency:
+
+```typescript
+const client = new AnyModel({
+  batch: {
+    concurrencyFallback: "auto",
+  },
+});
+```
+
+This uses TCP-style slow-start (exponential ramp: 5 → 10 → 20 → 40 → ...) to quickly find your ceiling, then switches to AIMD (additive increase / multiplicative decrease) for fine-tuning. It reads `x-ratelimit-remaining-requests` headers proactively and backs off on 429s — so an OpenAI Tier 4 account at 10,000 RPM will ramp to ~160 concurrent in about 155 requests instead of being stuck at 5.
+
+Use `concurrencyMax` to set a hard ceiling — useful when multiple batch jobs share the same API key:
+
+```typescript
+const client = new AnyModel({
+  batch: {
+    concurrencyFallback: "auto",
+    concurrencyMax: 50, // each job caps at 50, two jobs = 100 total
+  },
+});
+```
+
 ### Batch configuration
 
 ```typescript
@@ -295,6 +320,8 @@ const client = new AnyModel({
   batch: {
     pollInterval: 10000, // default poll interval in ms (default: 5000)
     concurrencyFallback: 10, // concurrent request limit for non-native providers (default: 5)
+    // concurrencyFallback: "auto", // or auto-discover from provider rate limits
+    // concurrencyMax: 50,          // hard ceiling for auto mode
   },
   io: {
     readConcurrency: 30, // concurrent file reads (default: 20)
@@ -529,8 +556,9 @@ npx tsx examples/basic.ts batch
 ## Built-in Resilience
 
 - **Retries**: Automatic retry with exponential backoff on 429/502/503 errors (configurable via `defaults.retries`)
-- **Rate limit tracking**: Per-provider rate limit state, automatically skips rate-limited providers during fallback routing
-- **Parameter stripping**: Unsupported parameters are automatically removed before forwarding to providers
+- **Rate limit tracking**: Per-provider rate limit state from response headers, automatically skips rate-limited providers during fallback routing
+- **Adaptive concurrency**: Auto mode discovers your provider's actual rate limit ceiling using TCP-style slow-start + AIMD, reading `x-ratelimit-remaining-requests` headers proactively
+- **Parameter translation**: `max_tokens` automatically sent as `max_completion_tokens` for newer OpenAI models (gpt-4o, o1, o3, gpt-5-mini). Unsupported parameters stripped before forwarding.
 - **Smart batch defaults**: Automatic `max_tokens` estimation per-request in batches — calculates safe values from input size and model context limits, preventing truncation and overflow without manual tuning
 - **Memory-efficient batching**: Concurrent batch requests are streamed from disk — only N requests (default 5) are in-flight at a time, making 10K+ request batches safe without memory spikes
 - **High-volume IO**: All batch file operations use concurrency-limited async queues with atomic durable writes (temp file + fsync + rename) to prevent corruption on crash. Defaults: 20 concurrent reads, 10 concurrent writes — configurable via `io.readConcurrency` and `io.writeConcurrency`
@@ -541,6 +569,7 @@ npx tsx examples/basic.ts batch
 - [x] **Cost tracking** — per-request and aggregate cost calculation from bundled pricing data (323 models from OpenRouter)
 - [ ] **Caching** — response caching with configurable TTL for identical requests
 - [x] **Native batch APIs** — OpenAI Batch API (JSONL upload, 50% cost), Anthropic Message Batches (10K requests, async), and Google Gemini Batch (50% cost). Auto-detects provider and routes to native API, falls back to concurrent for other providers
+- [x] **Adaptive concurrency** — auto-discover provider rate limit ceilings via TCP slow-start + AIMD, with hard cap support for multi-job workloads
 - [ ] **Result export** — `saveResults()` to write batch results to a configurable output directory
 - [ ] **Prompt logging** — optional request/response logging for debugging and evaluation
 

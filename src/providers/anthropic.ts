@@ -2,10 +2,12 @@ import type { ProviderAdapter } from './adapter.js';
 import type {
   ChatCompletionRequest,
   ChatCompletion,
+  ChatCompletionWithMeta,
   ChatCompletionChunk,
   AnyModelErrorMetadata,
   ModelInfo,
   Message,
+  ResponseMeta,
   ToolCall,
 } from '../types.js';
 import { AnyModelError } from '../types.js';
@@ -35,6 +37,31 @@ const FALLBACK_MODELS: ModelInfo[] = [
 ];
 
 export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
+  // Anthropic uses its own header naming convention
+  const RATE_LIMIT_HEADERS = [
+    'anthropic-ratelimit-requests-remaining',
+    'anthropic-ratelimit-tokens-remaining',
+    'anthropic-ratelimit-requests-reset',
+    'anthropic-ratelimit-tokens-reset',
+    'retry-after',
+  ];
+
+  function extractResponseMeta(res: Response): ResponseMeta {
+    const headers: Record<string, string> = {};
+    for (const key of RATE_LIMIT_HEADERS) {
+      const val = res.headers.get(key);
+      if (val) headers[key] = val;
+    }
+    // Normalize to x-ratelimit-* so the controller can use a single key
+    if (headers['anthropic-ratelimit-requests-remaining']) {
+      headers['x-ratelimit-remaining-requests'] = headers['anthropic-ratelimit-requests-remaining'];
+    }
+    if (headers['anthropic-ratelimit-tokens-remaining']) {
+      headers['x-ratelimit-remaining-tokens'] = headers['anthropic-ratelimit-tokens-remaining'];
+    }
+    return { headers };
+  }
+
   async function makeRequest(path: string, body: unknown, stream = false): Promise<Response> {
     const res = await fetchWithTimeout(`${ANTHROPIC_API_BASE}${path}`, {
       method: 'POST',
@@ -368,6 +395,14 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
       const res = await makeRequest('/messages', body);
       const json = await res.json();
       return translateResponse(json);
+    },
+
+    async sendRequestWithMeta(request: ChatCompletionRequest): Promise<ChatCompletionWithMeta> {
+      const body = translateRequest(request);
+      const res = await makeRequest('/messages', body);
+      const meta = extractResponseMeta(res);
+      const json = await res.json();
+      return { completion: translateResponse(json), meta };
     },
 
     async sendStreamingRequest(request: ChatCompletionRequest): Promise<AsyncIterable<ChatCompletionChunk>> {

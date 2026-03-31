@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - 2026-03-30
+
+### Added
+
+- **Adaptive concurrency for concurrent batches** — set `concurrencyFallback: 'auto'` to dynamically discover your provider's rate limit ceiling instead of using a fixed concurrency. Uses TCP-style slow-start (exponential ramp: 5 → 10 → 20 → 40 → ...) then switches to AIMD (additive increase / multiplicative decrease) after the first 429 or header-driven backoff. Proactively reads `x-ratelimit-remaining-requests` headers to stay under the limit without hitting 429s.
+- **`concurrencyMax` config option** — hard ceiling for auto concurrency. Useful when multiple batch jobs share the same API key: set each to e.g. 50 to divide your rate limit budget predictably.
+- **Response metadata on provider adapters** — `sendRequestWithMeta()` method on OpenAI, Anthropic, and Google adapters now returns response headers alongside the completion. Rate limit headers (`x-ratelimit-remaining-requests`, `retry-after`, etc.) are extracted and fed into the existing `RateLimitTracker`, which was previously unwired.
+- **`completeWithMeta()` on Router** — internal method that returns `ChatCompletionWithMeta` with rate limit headers. Used by the batch manager for adaptive concurrency; also activates the `RateLimitTracker` for fallback routing decisions.
+- Exported `AdaptiveConcurrencyController` class and `AdaptiveConcurrencyOptions` type for advanced usage
+- Exported `ResponseMeta` and `ChatCompletionWithMeta` types
+
+### Fixed
+
+- **`max_tokens` → `max_completion_tokens` translation** — newer OpenAI models (gpt-4o, gpt-4o-mini, o1, o3, o4-mini, gpt-5-mini) require `max_completion_tokens` instead of `max_tokens`. anymodel now detects the model and sends the correct parameter automatically. The SDK surface stays unchanged — callers always pass `max_tokens`.
+- **Flex discount missing on concurrent batch cost calculations** — `BatchManager.getResults()` only applied the 50% native batch discount, ignoring `service_tier: 'flex'` on concurrent batches. Now correctly applies 50% for both native and concurrent+flex.
+- **`service_tier` now persisted on `BatchObject`** — previously lost after batch creation, preventing accurate cost calculation on retrieval.
+- Added `gpt-5-mini` to token estimation limits (1M context, 65K max completion tokens)
+
 ## [0.7.1] - 2026-03-26
 
 ### Fixed

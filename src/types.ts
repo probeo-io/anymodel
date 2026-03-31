@@ -117,6 +117,19 @@ export interface ChatCompletion {
   usage: Usage;
 }
 
+// ─── Response Metadata ──────────────────────────────────────────────────────
+
+/** Rate-limit headers extracted from a provider response. */
+export interface ResponseMeta {
+  headers: Record<string, string>;
+}
+
+/** A completion paired with its response metadata (headers). */
+export interface ChatCompletionWithMeta {
+  completion: ChatCompletion;
+  meta: ResponseMeta;
+}
+
 // ─── Streaming ───────────────────────────────────────────────────────────────
 
 export interface ChunkDelta {
@@ -263,6 +276,7 @@ export interface BatchObject {
   model: string;
   provider_name: string;
   batch_mode: BatchMode;
+  service_tier?: 'auto' | 'flex';
   total: number;
   completed: number;
   failed: number;
@@ -332,7 +346,9 @@ export interface AnyModelConfig {
   batch?: {
     dir?: string;
     pollInterval?: number;
-    concurrencyFallback?: number;
+    concurrencyFallback?: number | 'auto';
+    /** Hard ceiling for auto concurrency. Only applies when concurrencyFallback is 'auto'. */
+    concurrencyMax?: number;
     retentionDays?: number;
   };
   io?: {

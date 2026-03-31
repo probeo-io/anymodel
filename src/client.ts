@@ -141,6 +141,7 @@ export class AnyModel {
     this.batchManager = new BatchManager(this.router, {
       dir: this.config.batch?.dir,
       concurrency: this.config.batch?.concurrencyFallback,
+      concurrencyMax: this.config.batch?.concurrencyMax,
       pollInterval: this.config.batch?.pollInterval,
     });
 

@@ -7,6 +7,11 @@ import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
+// Models that use max_completion_tokens instead of max_tokens
+function usesMaxCompletionTokens(model: string): boolean {
+  return /^(o[1-9]|gpt-5|gpt-4o)/.test(model);
+}
+
 export function createOpenAIBatchAdapter(apiKey: string): BatchAdapter {
   async function apiRequest(path: string, options: {
     method?: string;
@@ -50,9 +55,14 @@ export function createOpenAIBatchAdapter(apiKey: string): BatchAdapter {
         model,
         messages: req.messages,
       };
-      body.max_tokens = req.max_tokens !== undefined
+      const maxTokensValue = req.max_tokens !== undefined
         ? req.max_tokens
         : resolveMaxTokens(model, req.messages);
+      if (usesMaxCompletionTokens(model)) {
+        body.max_completion_tokens = maxTokensValue;
+      } else {
+        body.max_tokens = maxTokensValue;
+      }
       if (req.temperature !== undefined) body.temperature = req.temperature;
       if (req.top_p !== undefined) body.top_p = req.top_p;
       if (req.stop !== undefined) body.stop = req.stop;

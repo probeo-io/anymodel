@@ -1,6 +1,7 @@
 import type {
   ChatCompletionRequest,
   ChatCompletion,
+  ChatCompletionWithMeta,
   ChatCompletionChunk,
   AnyModelErrorMetadata,
   ModelInfo,
@@ -20,6 +21,8 @@ export interface ProviderAdapter {
   supportsBatch(): boolean;
 
   sendRequest(request: ChatCompletionRequest): Promise<ChatCompletion>;
+  /** Like sendRequest but also returns response headers for rate-limit tracking. */
+  sendRequestWithMeta?(request: ChatCompletionRequest): Promise<ChatCompletionWithMeta>;
   sendStreamingRequest(request: ChatCompletionRequest): Promise<AsyncIterable<ChatCompletionChunk>>;
 }
 

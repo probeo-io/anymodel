@@ -23,6 +23,7 @@ const MODEL_LIMITS: Array<{ pattern: string; limit: ModelLimit }> = [
   { pattern: 'o1',             limit: { contextLength: 200_000,   maxCompletionTokens: 100_000 } },
   { pattern: 'o3',             limit: { contextLength: 200_000,   maxCompletionTokens: 100_000 } },
   { pattern: 'o4-mini',        limit: { contextLength: 200_000,   maxCompletionTokens: 100_000 } },
+  { pattern: 'gpt-5-mini',    limit: { contextLength: 1_047_576, maxCompletionTokens: 65_536  } },
 
   // Anthropic
   { pattern: 'claude-opus-4',      limit: { contextLength: 200_000, maxCompletionTokens: 32_768 } },

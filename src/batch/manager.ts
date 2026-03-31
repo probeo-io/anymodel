@@ -10,6 +10,7 @@ import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
 import { calculateCost } from '../generated/pricing.js';
 import { BatchStore } from './store.js';
+import { AdaptiveConcurrencyController } from '../utils/adaptive-concurrency.js';
 import type { Router } from '../router.js';
 import type { BatchAdapter } from '../providers/adapter.js';
 
@@ -28,13 +29,17 @@ export class BatchManager {
   private store: BatchStore;
   private router: Router;
   private concurrencyLimit: number;
+  private concurrencyMax: number | undefined;
+  private useAdaptive: boolean;
   private defaultPollInterval: number;
   private batchAdapters = new Map<string, BatchAdapter>();
 
-  constructor(router: Router, options?: { dir?: string; concurrency?: number; pollInterval?: number }) {
+  constructor(router: Router, options?: { dir?: string; concurrency?: number | 'auto'; concurrencyMax?: number; pollInterval?: number }) {
     this.store = new BatchStore(options?.dir);
     this.router = router;
-    this.concurrencyLimit = options?.concurrency ?? 5;
+    this.useAdaptive = options?.concurrency === 'auto';
+    this.concurrencyLimit = typeof options?.concurrency === 'number' ? options.concurrency : 5;
+    this.concurrencyMax = options?.concurrencyMax;
     this.defaultPollInterval = options?.pollInterval ?? 5000;
   }
 
@@ -69,6 +74,10 @@ export class BatchManager {
     const native = request.batch_mode !== 'concurrent' ? this.getNativeBatchAdapter(request.model) : null;
     const batchMode = native ? 'native' as const : 'concurrent' as const;
 
+    // Resolve service_tier from request-level options or individual items
+    const serviceTier = request.options?.service_tier
+      ?? request.requests[0]?.service_tier;
+
     const batch: BatchObject = {
       id,
       object: 'batch',
@@ -76,6 +85,7 @@ export class BatchManager {
       model: request.model,
       provider_name: providerName,
       batch_mode: batchMode,
+      service_tier: serviceTier,
       total: request.requests.length,
       completed: 0,
       failed: 0,
@@ -175,8 +185,10 @@ export class BatchManager {
       estimated_cost: 0,
     };
 
-    // Native batch APIs (OpenAI, Anthropic, Google) are 50% off list price
-    const batchDiscount = batch.batch_mode === 'native' ? 0.5 : 1;
+    // Native batch APIs are 50% off; concurrent with flex is also 50% off
+    const batchDiscount = batch.batch_mode === 'native' ? 0.5
+      : batch.service_tier === 'flex' ? 0.5
+      : 1;
 
     for (const result of results) {
       if (result.response) {
@@ -331,6 +343,8 @@ export class BatchManager {
   /**
    * Process batch requests concurrently (fallback path).
    * Streams requests from disk to avoid holding them all in memory.
+   * When adaptive concurrency is enabled, dynamically adjusts parallelism
+   * based on provider rate-limit headers and 429 responses.
    */
   private async processConcurrentBatch(batchId: string, model: string, options?: Record<string, unknown>): Promise<void> {
     const batch = await this.store.getMeta(batchId);
@@ -338,9 +352,21 @@ export class BatchManager {
     batch.status = 'processing';
     await this.store.updateMeta(batch);
 
+    const controller = this.useAdaptive
+      ? new AdaptiveConcurrencyController({ initial: this.concurrencyLimit, max: this.concurrencyMax })
+      : null;
+
+    const getLimit = (): number => controller ? controller.maxConcurrency : this.concurrencyLimit;
+
     const active = new Set<Promise<void>>();
 
     const processItem = async (item: any): Promise<void> => {
+      // Respect rate-limit pause from the controller
+      if (controller) {
+        const delay = controller.getDelay();
+        if (delay > 0) await new Promise(r => setTimeout(r, delay));
+      }
+
       const current = await this.store.getMeta(batchId);
       if (current?.status === 'cancelled') return;
 
@@ -360,15 +386,22 @@ export class BatchManager {
 
       let result: BatchResultItem;
       try {
-        const response = await this.router.complete(chatRequest);
+        const { completion, meta } = await this.router.completeWithMeta(chatRequest);
+        controller?.recordSuccess(meta);
         result = {
           custom_id: item.custom_id,
           status: 'success',
-          response,
+          response: completion,
           error: null,
         };
       } catch (err) {
         const error = err instanceof AnyModelError ? err : new AnyModelError(500, String(err));
+        if (error.code === 429) {
+          // Extract retry-after from error metadata if available
+          const raw = error.metadata.raw as any;
+          const retryAfter = raw?.headers?.['retry-after'];
+          controller?.recordThrottle(retryAfter ? Number(retryAfter) * 1000 : undefined);
+        }
         result = {
           custom_id: item.custom_id,
           status: 'error',
@@ -395,7 +428,7 @@ export class BatchManager {
       const current = await this.store.getMeta(batchId);
       if (current?.status === 'cancelled') break;
 
-      if (active.size >= this.concurrencyLimit) {
+      if (active.size >= getLimit()) {
         await Promise.race(active);
       }
 

@@ -2,10 +2,12 @@ import type { ProviderAdapter } from './adapter.js';
 import type {
   ChatCompletionRequest,
   ChatCompletion,
+  ChatCompletionWithMeta,
   ChatCompletionChunk,
   AnyModelErrorMetadata,
   ModelInfo,
   Message,
+  ResponseMeta,
   ToolCall,
 } from '../types.js';
 import { AnyModelError } from '../types.js';
@@ -33,6 +35,22 @@ const FALLBACK_MODELS: ModelInfo[] = [
 ];
 
 export function createGoogleAdapter(apiKey: string): ProviderAdapter {
+  const RATE_LIMIT_HEADERS = [
+    'x-ratelimit-remaining-requests',
+    'x-ratelimit-remaining-tokens',
+    'x-ratelimit-reset-requests',
+    'retry-after',
+  ];
+
+  function extractResponseMeta(res: Response): ResponseMeta {
+    const headers: Record<string, string> = {};
+    for (const key of RATE_LIMIT_HEADERS) {
+      const val = res.headers.get(key);
+      if (val) headers[key] = val;
+    }
+    return { headers };
+  }
+
   function getModelEndpoint(model: string, stream: boolean): string {
     const action = stream ? 'streamGenerateContent' : 'generateContent';
     return `${GEMINI_API_BASE}/models/${model}:${action}?key=${apiKey}${stream ? '&alt=sse' : ''}`;
@@ -325,6 +343,26 @@ export function createGoogleAdapter(apiKey: string): ProviderAdapter {
       }
       const json = await res.json();
       return translateResponse(json);
+    },
+
+    async sendRequestWithMeta(request: ChatCompletionRequest): Promise<ChatCompletionWithMeta> {
+      const body = translateRequest(request);
+      const url = getModelEndpoint(request.model, false);
+      const res = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        let errorBody: any;
+        try { errorBody = await res.json(); } catch { errorBody = { message: res.statusText }; }
+        throw new AnyModelError(mapErrorCode(res.status), errorBody?.error?.message || res.statusText, {
+          provider_name: 'google', raw: errorBody,
+        });
+      }
+      const meta = extractResponseMeta(res);
+      const json = await res.json();
+      return { completion: translateResponse(json), meta };
     },
 
     async sendStreamingRequest(request: ChatCompletionRequest): Promise<AsyncIterable<ChatCompletionChunk>> {

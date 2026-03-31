@@ -2,9 +2,11 @@ import type { ProviderAdapter } from './adapter.js';
 import type {
   ChatCompletionRequest,
   ChatCompletion,
+  ChatCompletionWithMeta,
   ChatCompletionChunk,
   AnyModelErrorMetadata,
   ModelInfo,
+  ResponseMeta,
 } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
@@ -63,6 +65,28 @@ export function createOpenAIAdapter(apiKey: string, baseURL?: string): ProviderA
     return id.startsWith('gen-') ? id : `gen-${id}`;
   }
 
+  const RATE_LIMIT_HEADERS = [
+    'x-ratelimit-remaining-requests',
+    'x-ratelimit-remaining-tokens',
+    'x-ratelimit-reset-requests',
+    'x-ratelimit-reset-tokens',
+    'retry-after',
+  ];
+
+  function extractResponseMeta(res: Response): ResponseMeta {
+    const headers: Record<string, string> = {};
+    for (const key of RATE_LIMIT_HEADERS) {
+      const val = res.headers.get(key);
+      if (val) headers[key] = val;
+    }
+    return { headers };
+  }
+
+  // Models that use max_completion_tokens instead of max_tokens
+  function usesMaxCompletionTokens(model: string): boolean {
+    return /^(o[1-9]|gpt-5|gpt-4o)/.test(model);
+  }
+
   function buildRequestBody(request: ChatCompletionRequest): Record<string, unknown> {
     const body: Record<string, unknown> = {
       model: request.model,
@@ -70,8 +94,13 @@ export function createOpenAIAdapter(apiKey: string, baseURL?: string): ProviderA
     };
 
     // Copy over optional params
-    if (request.temperature !== undefined) body.temperature = request.temperature;
-    if (request.max_tokens !== undefined) body.max_tokens = request.max_tokens;
+    if (request.max_tokens !== undefined) {
+      if (usesMaxCompletionTokens(request.model)) {
+        body.max_completion_tokens = request.max_tokens;
+      } else {
+        body.max_tokens = request.max_tokens;
+      }
+    }
     if (request.top_p !== undefined) body.top_p = request.top_p;
     if (request.frequency_penalty !== undefined) body.frequency_penalty = request.frequency_penalty;
     if (request.presence_penalty !== undefined) body.presence_penalty = request.presence_penalty;
@@ -207,6 +236,15 @@ export function createOpenAIAdapter(apiKey: string, baseURL?: string): ProviderA
       const res = await makeRequest('/chat/completions', body, 'POST', timeout);
       const json = await res.json();
       return adapter.translateResponse(json);
+    },
+
+    async sendRequestWithMeta(request: ChatCompletionRequest): Promise<ChatCompletionWithMeta> {
+      const body = buildRequestBody(request);
+      const timeout = request.service_tier === 'flex' ? getFlexTimeout() : undefined;
+      const res = await makeRequest('/chat/completions', body, 'POST', timeout);
+      const meta = extractResponseMeta(res);
+      const json = await res.json();
+      return { completion: adapter.translateResponse(json), meta };
     },
 
     async sendStreamingRequest(request: ChatCompletionRequest): Promise<AsyncIterable<ChatCompletionChunk>> {

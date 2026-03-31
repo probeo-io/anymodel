@@ -49,6 +49,10 @@ export type {
   ProviderConfig,
   CustomProviderConfig,
 
+  // Response metadata
+  ResponseMeta,
+  ChatCompletionWithMeta,
+
   // Errors
   AnyModelErrorMetadata,
 } from './types.js';
@@ -87,6 +91,10 @@ export type { ProviderAdapter, BatchAdapter, NativeBatchStatus } from './provide
 export { createOpenAIBatchAdapter } from './providers/openai-batch.js';
 export { createAnthropicBatchAdapter } from './providers/anthropic-batch.js';
 export { createGoogleBatchAdapter } from './providers/google-batch.js';
+
+// Adaptive concurrency
+export { AdaptiveConcurrencyController } from './utils/adaptive-concurrency.js';
+export type { AdaptiveConcurrencyOptions } from './utils/adaptive-concurrency.js';
 
 // Token estimation
 export { resolveMaxTokens, estimateTokenCount } from './utils/token-estimate.js';

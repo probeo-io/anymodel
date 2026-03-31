@@ -1,6 +1,7 @@
 import type {
   ChatCompletionRequest,
   ChatCompletion,
+  ChatCompletionWithMeta,
   ChatCompletionChunk,
   AnyModelConfig,
   ProviderPreferences,
@@ -152,6 +153,34 @@ export class Router {
       () => adapter.sendRequest(resolvedRequest),
       this.getRetryOptions(),
     );
+  }
+
+  /**
+   * Like complete(), but returns response metadata (headers) alongside the completion.
+   * Used by the batch manager for adaptive concurrency control.
+   */
+  async completeWithMeta(request: ChatCompletionRequest): Promise<ChatCompletionWithMeta> {
+    validateRequest(request);
+    const transformed = this.applyTransforms(request);
+    const { provider, model } = parseModelString(transformed.model, this.aliases);
+    const adapter = this.registry.get(provider);
+    const resolvedRequest = this.stripUnsupported({ ...transformed, model }, adapter);
+
+    if (adapter.sendRequestWithMeta) {
+      const result = await withRetry(
+        () => adapter.sendRequestWithMeta!(resolvedRequest),
+        this.getRetryOptions(),
+      );
+      this.rateLimiter.updateFromHeaders(provider, result.meta.headers);
+      return result;
+    }
+
+    // Fallback for adapters without meta support
+    const completion = await withRetry(
+      () => adapter.sendRequest(resolvedRequest),
+      this.getRetryOptions(),
+    );
+    return { completion, meta: { headers: {} } };
   }
 
   async stream(request: ChatCompletionRequest): Promise<AsyncIterable<ChatCompletionChunk>> {
