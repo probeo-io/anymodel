@@ -198,7 +198,7 @@ export function createOpenAIAdapter(apiKey: string, baseURL?: string): ProviderA
           if (id.includes('realtime')) return false;
           if (id.startsWith('ft:')) return false;
           // Include known chat model prefixes
-          return id.startsWith('gpt-') || id.startsWith('o1') || id.startsWith('o3') || id.startsWith('o4') || id.startsWith('chatgpt-');
+          return id.startsWith('gpt-') || id.startsWith('o1') || id.startsWith('o3') || id.startsWith('o4') || id.startsWith('o5') || id.startsWith('chatgpt-');
         })
         .map((m: any) => ({
           id: `openai/${m.id}`,

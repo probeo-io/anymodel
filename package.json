@@ -1,6 +1,6 @@
 {
   "name": "@probeo/anymodel",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "OpenRouter-compatible LLM router with unified batch support. Self-hosted, zero fees.",
   "type": "module",
   "main": "./dist/index.cjs",
