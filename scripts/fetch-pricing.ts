@@ -126,17 +126,24 @@ ${entries.join(',\n')},
 /**
  * Look up pricing for a model. Tries exact match first,
  * then falls back to prefix matching for versioned models.
+ * Handles dot/dash normalization: Anthropic API uses dashes (claude-opus-4-7)
+ * while OpenRouter uses dots (claude-opus-4.7).
  */
 export function getModelPricing(modelId: string): PricingEntry | null {
   // Exact match
   if (MODEL_PRICING[modelId]) return MODEL_PRICING[modelId];
 
-  // Try without anymodel provider prefix remapping
-  // e.g. "openai/gpt-4o" is already the OpenRouter format
+  // Normalize version suffix for dot/dash comparison
+  const normalized = modelId.replace(/(\\d+)\\.(\\d+)/, '$1-$2');
+  const dotted = modelId.replace(/(\\d+)-(\\d+)$/, '$1.$2');
 
   // Prefix match: "openai/gpt-4o-2024-08-06" → "openai/gpt-4o"
   for (const [id, pricing] of Object.entries(MODEL_PRICING)) {
-    if (modelId.startsWith(id) || id.startsWith(modelId)) {
+    const idNorm = id.replace(/(\\d+)\\.(\\d+)/, '$1-$2');
+    if (normalized.startsWith(idNorm) || idNorm.startsWith(normalized)) {
+      return pricing;
+    }
+    if (dotted.startsWith(id) || id.startsWith(dotted)) {
       return pricing;
     }
   }
