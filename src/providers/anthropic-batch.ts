@@ -7,8 +7,6 @@ import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
-const DEFAULT_MAX_TOKENS = 4096;
-
 export function createAnthropicBatchAdapter(apiKey: string): BatchAdapter {
   async function apiRequest(path: string, options: {
     method?: string;
@@ -42,7 +40,7 @@ export function createAnthropicBatchAdapter(apiKey: string): BatchAdapter {
   function translateToAnthropicParams(model: string, req: BatchRequestItem): Record<string, unknown> {
     const params: Record<string, unknown> = {
       model,
-      max_tokens: resolveMaxTokens(model, req.messages, req.max_tokens || DEFAULT_MAX_TOKENS),
+      max_tokens: resolveMaxTokens(model, req.messages, req.max_tokens),
     };
 
     // Extract system messages

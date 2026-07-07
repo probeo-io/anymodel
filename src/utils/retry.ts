@@ -7,9 +7,9 @@ export interface RetryOptions {
 }
 
 const DEFAULT_RETRY: RetryOptions = {
-  maxRetries: 2,
-  baseDelay: 500,
-  maxDelay: 10000,
+  maxRetries: 5,
+  baseDelay: 1000,
+  maxDelay: 60000,
 };
 
 // Retryable status codes
@@ -61,6 +61,8 @@ export async function withRetry<T>(
       }
 
       const delay = computeDelay(attempt, opts, error);
+      const code = error instanceof AnyModelError ? error.code : '?';
+      console.warn(`  ↻ retry ${attempt + 1}/${opts.maxRetries} (code ${code}) — waiting ${Math.round(delay / 1000)}s`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
