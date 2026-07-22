@@ -5,6 +5,7 @@ import type {
   ChatCompletionWithMeta,
   ChatCompletionChunk,
   AnyModelErrorMetadata,
+  FunctionTool,
   ModelInfo,
   Message,
   ResponseMeta,
@@ -20,6 +21,10 @@ const SUPPORTED_PARAMS = new Set([
   'temperature', 'max_tokens', 'top_p', 'top_k', 'stop', 'stream',
   'tools', 'tool_choice', 'response_format',
 ]);
+
+function isFunctionTool(tool: unknown): tool is FunctionTool {
+  return Boolean(tool && typeof tool === 'object' && (tool as FunctionTool).type === 'function');
+}
 
 // Fallback if API listing fails — kept current as of March 2026
 const FALLBACK_MODELS: ModelInfo[] = [
@@ -113,13 +118,15 @@ export function createGoogleAdapter(apiKey: string): ProviderAdapter {
 
     // Map tools
     if (request.tools && request.tools.length > 0) {
+      const functionTools = request.tools.filter(isFunctionTool);
       body.tools = [{
-        functionDeclarations: request.tools.map(t => ({
+        functionDeclarations: functionTools.map(t => ({
           name: t.function.name,
           description: t.function.description || '',
           parameters: t.function.parameters || {},
         })),
       }];
+      if (functionTools.length === 0) delete body.tools;
 
       if (request.tool_choice) {
         if (request.tool_choice === 'auto') {

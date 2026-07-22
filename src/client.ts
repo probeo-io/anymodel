@@ -15,6 +15,7 @@ import { createOpenAIAdapter } from './providers/openai.js';
 import { createAnthropicAdapter } from './providers/anthropic.js';
 import { createGoogleAdapter } from './providers/google.js';
 import { createPerplexityAdapter } from './providers/perplexity.js';
+import { createXAIAdapter } from './providers/xai.js';
 import { createCustomAdapter } from './providers/custom.js';
 import { resolveConfig } from './config.js';
 import { GenerationStatsStore } from './utils/generation-stats.js';
@@ -23,6 +24,7 @@ import { BatchBuilder, type BatchBuilderConfig, type BatchBuilderResults } from 
 import { createOpenAIBatchAdapter } from './providers/openai-batch.js';
 import { createAnthropicBatchAdapter } from './providers/anthropic-batch.js';
 import { createGoogleBatchAdapter } from './providers/google-batch.js';
+import { createXAIBatchAdapter } from './providers/xai-batch.js';
 import { configureFsIO } from './utils/fs-io.js';
 import { setDefaultTimeout } from './utils/fetch-with-timeout.js';
 
@@ -186,6 +188,12 @@ export class AnyModel {
       this.registry.register('perplexity', createPerplexityAdapter(perplexityKey));
     }
 
+    // xAI — native adapter with Responses web_search support
+    const xaiKey = config.xai?.apiKey || process.env.XAI_API_KEY;
+    if (xaiKey) {
+      this.registry.register('xai', createXAIAdapter(xaiKey));
+    }
+
     // Built-in OpenAI-compatible providers
     const builtinProviders: Array<{
       name: string;
@@ -196,7 +204,6 @@ export class AnyModel {
       { name: 'mistral', baseURL: 'https://api.mistral.ai/v1', configKey: 'mistral', envVar: 'MISTRAL_API_KEY' },
       { name: 'groq', baseURL: 'https://api.groq.com/openai/v1', configKey: 'groq', envVar: 'GROQ_API_KEY' },
       { name: 'deepseek', baseURL: 'https://api.deepseek.com', configKey: 'deepseek', envVar: 'DEEPSEEK_API_KEY' },
-      { name: 'xai', baseURL: 'https://api.x.ai/v1', configKey: 'xai', envVar: 'XAI_API_KEY' },
       { name: 'together', baseURL: 'https://api.together.xyz/v1', configKey: 'together', envVar: 'TOGETHER_API_KEY' },
       { name: 'fireworks', baseURL: 'https://api.fireworks.ai/inference/v1', configKey: 'fireworks', envVar: 'FIREWORKS_API_KEY' },
     ];
@@ -240,6 +247,11 @@ export class AnyModel {
     const googleKey = config.google?.apiKey || process.env.GOOGLE_API_KEY;
     if (googleKey) {
       this.batchManager.registerBatchAdapter('google', createGoogleBatchAdapter(googleKey));
+    }
+
+    const xaiKey = config.xai?.apiKey || process.env.XAI_API_KEY;
+    if (xaiKey) {
+      this.batchManager.registerBatchAdapter('xai', createXAIBatchAdapter(xaiKey));
     }
   }
 

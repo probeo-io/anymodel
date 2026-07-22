@@ -1,11 +1,15 @@
 import type { BatchAdapter, NativeBatchStatus } from './adapter.js';
-import type { BatchRequestItem, BatchResultItem, ChatCompletion, Message, ToolCall } from '../types.js';
+import type { BatchRequestItem, BatchResultItem, ChatCompletion, FunctionTool, Message, ToolCall } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
 import { resolveMaxTokens } from '../utils/token-estimate.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+
+function isFunctionTool(tool: unknown): tool is FunctionTool {
+  return Boolean(tool && typeof tool === 'object' && (tool as FunctionTool).type === 'function');
+}
 
 export function createGoogleBatchAdapter(apiKey: string): BatchAdapter {
   async function apiRequest(path: string, options: {
@@ -86,13 +90,15 @@ export function createGoogleBatchAdapter(apiKey: string): BatchAdapter {
 
     // Map tools
     if (req.tools && req.tools.length > 0) {
+      const functionTools = req.tools.filter(isFunctionTool);
       body.tools = [{
-        functionDeclarations: req.tools.map(t => ({
+        functionDeclarations: functionTools.map(t => ({
           name: t.function.name,
           description: t.function.description || '',
           parameters: t.function.parameters || {},
         })),
       }];
+      if (functionTools.length === 0) delete body.tools;
 
       if (req.tool_choice) {
         if (req.tool_choice === 'auto') {

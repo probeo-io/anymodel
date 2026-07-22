@@ -5,6 +5,7 @@ import type {
   ResponseFormat,
   Tool,
   ToolChoice,
+  PromptCacheOptions,
 } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
@@ -26,6 +27,7 @@ export interface BatchBuilderConfig {
   tools?: Tool[];
   tool_choice?: ToolChoice;
   service_tier?: 'auto' | 'flex';
+  cache?: PromptCacheOptions;
   /** Force batch mode: 'native' uses provider batch API, 'concurrent' sends individual requests. */
   batch_mode?: 'native' | 'concurrent';
 }
@@ -153,6 +155,7 @@ export class BatchBuilder {
     if (this.config.tools !== undefined) item.tools = this.config.tools;
     if (this.config.tool_choice !== undefined) item.tool_choice = this.config.tool_choice;
     if (this.config.service_tier !== undefined) item.service_tier = this.config.service_tier;
+    if (this.config.cache !== undefined) item.cache = this.config.cache;
 
     // Write to disk immediately (fire and forget — appendRequest is fast)
     this.store.appendRequest(this.batchId, item);

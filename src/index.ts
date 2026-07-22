@@ -10,6 +10,8 @@ export type {
 
   // Tools
   Tool,
+  FunctionTool,
+  WebSearchTool,
   ToolChoice,
   ToolCall,
 
@@ -21,6 +23,7 @@ export type {
   ChunkChoice,
   ChunkDelta,
   ResponseFormat,
+  PromptCacheOptions,
   ProviderPreferences,
   Usage,
   FinishReason,
@@ -69,6 +72,10 @@ export { GenerationStatsStore } from './utils/generation-stats.js';
 export { BatchManager, BatchStore, BatchBuilder } from './batch/index.js';
 export type { BatchPollOptions, BatchBuilderConfig, BatchBuilderResults, BatchBuilderSuccessItem, BatchBuilderFailedItem } from './batch/index.js';
 
+// Prompt caching
+export { createPromptCacheKey, withPromptCache } from './cache.js';
+export type { PromptCacheKeyOptions } from './cache.js';
+
 // Server
 export { createAnyModelServer, startServer } from './server.js';
 export type { ServerOptions } from './server.js';
@@ -91,6 +98,7 @@ export type { ProviderAdapter, BatchAdapter, NativeBatchStatus } from './provide
 export { createOpenAIBatchAdapter } from './providers/openai-batch.js';
 export { createAnthropicBatchAdapter } from './providers/anthropic-batch.js';
 export { createGoogleBatchAdapter } from './providers/google-batch.js';
+export { createXAIBatchAdapter } from './providers/xai-batch.js';
 
 // Adaptive concurrency
 export { AdaptiveConcurrencyController } from './utils/adaptive-concurrency.js';

@@ -18,12 +18,25 @@ export interface ContentPart {
 
 // ─── Tools ───────────────────────────────────────────────────────────────────
 
-export interface Tool {
+export type Tool =
+  | FunctionTool
+  | WebSearchTool;
+
+export interface FunctionTool {
   type: 'function';
   function: {
     name: string;
     description?: string;
     parameters?: Record<string, unknown>;
+  };
+}
+
+export interface WebSearchTool {
+  type: 'web_search';
+  search_context_size?: 'low' | 'medium' | 'high';
+  filters?: {
+    allowed_domains?: string[];
+    blocked_domains?: string[];
   };
 }
 
@@ -48,6 +61,15 @@ export type ResponseFormat =
   | { type: 'text' }
   | { type: 'json_object' }
   | { type: 'json_schema'; json_schema: { name: string; schema: Record<string, unknown>; strict?: boolean } };
+
+// ─── Prompt Caching ─────────────────────────────────────────────────────────
+
+export interface PromptCacheOptions {
+  /** Stable routing/cache key for requests with the same reusable prompt prefix. */
+  key?: string;
+  /** Desired provider cache retention, when supported. */
+  ttl?: '5m' | '1h' | '24h';
+}
 
 // ─── Chat Completion Request ─────────────────────────────────────────────────
 
@@ -83,6 +105,7 @@ export interface ChatCompletionRequest {
   tool_choice?: ToolChoice;
   user?: string;
   service_tier?: 'auto' | 'flex';
+  cache?: PromptCacheOptions;
 
   // Anymodel-specific (mirrors OpenRouter)
   models?: string[];
@@ -248,6 +271,7 @@ export interface BatchRequestItem {
   tools?: Tool[];
   tool_choice?: ToolChoice;
   service_tier?: 'auto' | 'flex';
+  cache?: PromptCacheOptions;
 }
 
 export interface BatchCreateRequest {
@@ -265,6 +289,7 @@ export interface BatchCreateRequest {
     tools?: Tool[];
     tool_choice?: ToolChoice;
     service_tier?: 'auto' | 'flex';
+    cache?: PromptCacheOptions;
   };
   webhook?: string;
 }

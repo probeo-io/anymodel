@@ -5,6 +5,7 @@ import type {
   ChatCompletionWithMeta,
   ChatCompletionChunk,
   AnyModelErrorMetadata,
+  FunctionTool,
   ModelInfo,
   Message,
   ResponseMeta,
@@ -20,8 +21,12 @@ const DEFAULT_MAX_TOKENS = 4096;
 
 const SUPPORTED_PARAMS = new Set([
   'temperature', 'max_tokens', 'top_p', 'top_k', 'stop', 'stream',
-  'tools', 'tool_choice', 'response_format',
+  'tools', 'tool_choice', 'response_format', 'cache',
 ]);
+
+function isFunctionTool(tool: unknown): tool is FunctionTool {
+  return Boolean(tool && typeof tool === 'object' && (tool as FunctionTool).type === 'function');
+}
 
 // Fallback if API listing fails — sourced from docs.anthropic.com/en/docs/about-claude/models/overview
 const FALLBACK_MODELS: ModelInfo[] = [
@@ -131,14 +136,22 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
     if (request.top_k !== undefined) body.top_k = request.top_k;
     if (request.stop !== undefined) body.stop_sequences = Array.isArray(request.stop) ? request.stop : [request.stop];
     if (request.stream) body.stream = true;
+    if (request.cache) {
+      body.cache_control = {
+        type: 'ephemeral',
+        ...(request.cache.ttl === '1h' || request.cache.ttl === '24h' ? { ttl: '1h' } : {}),
+      };
+    }
 
     // Map tools
     if (request.tools && request.tools.length > 0) {
-      body.tools = request.tools.map(t => ({
+      const functionTools = request.tools.filter(isFunctionTool);
+      body.tools = functionTools.map(t => ({
         name: t.function.name,
         description: t.function.description || '',
         input_schema: t.function.parameters || { type: 'object', properties: {} },
       }));
+      if (functionTools.length === 0) delete body.tools;
 
       if (request.tool_choice) {
         if (request.tool_choice === 'auto') {

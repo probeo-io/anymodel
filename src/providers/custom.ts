@@ -10,7 +10,9 @@ export function createCustomAdapter(
   name: string,
   config: CustomProviderConfig,
 ): ProviderAdapter {
-  const openaiAdapter = createOpenAIAdapter(config.apiKey || '', config.baseURL);
+  const openaiAdapter = createOpenAIAdapter(config.apiKey || '', config.baseURL, {
+    cacheStrategy: name === 'xai' ? 'xai' : 'none',
+  });
 
   return {
     ...openaiAdapter,

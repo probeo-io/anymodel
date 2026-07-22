@@ -1,5 +1,5 @@
 import type { BatchAdapter, NativeBatchStatus } from './adapter.js';
-import type { BatchRequestItem, BatchResultItem, ChatCompletion, Message, ToolCall } from '../types.js';
+import type { BatchRequestItem, BatchResultItem, ChatCompletion, FunctionTool, Message, ToolCall } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
 import { resolveMaxTokens } from '../utils/token-estimate.js';
@@ -7,6 +7,11 @@ import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
+
+function isFunctionTool(tool: unknown): tool is FunctionTool {
+  return Boolean(tool && typeof tool === 'object' && (tool as FunctionTool).type === 'function');
+}
+
 export function createAnthropicBatchAdapter(apiKey: string): BatchAdapter {
   async function apiRequest(path: string, options: {
     method?: string;
@@ -65,14 +70,22 @@ export function createAnthropicBatchAdapter(apiKey: string): BatchAdapter {
     if (req.top_p !== undefined) params.top_p = req.top_p;
     if (req.top_k !== undefined) params.top_k = req.top_k;
     if (req.stop !== undefined) params.stop_sequences = Array.isArray(req.stop) ? req.stop : [req.stop];
+    if (req.cache) {
+      params.cache_control = {
+        type: 'ephemeral',
+        ...(req.cache.ttl === '1h' || req.cache.ttl === '24h' ? { ttl: '1h' } : {}),
+      };
+    }
 
     // Map tools
     if (req.tools && req.tools.length > 0) {
-      params.tools = req.tools.map(t => ({
+      const functionTools = req.tools.filter(isFunctionTool);
+      params.tools = functionTools.map(t => ({
         name: t.function.name,
         description: t.function.description || '',
         input_schema: t.function.parameters || { type: 'object', properties: {} },
       }));
+      if (functionTools.length === 0) delete params.tools;
 
       if (req.tool_choice) {
         if (req.tool_choice === 'auto') {
