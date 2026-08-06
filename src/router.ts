@@ -21,6 +21,7 @@ const STRIPPABLE_PARAMS = [
   'frequency_penalty', 'presence_penalty', 'repetition_penalty',
   'seed', 'stop', 'logprobs', 'top_logprobs', 'response_format',
   'tools', 'tool_choice', 'user',
+  'reasoning',
 ] as const;
 
 export class Router {

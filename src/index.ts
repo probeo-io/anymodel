@@ -108,5 +108,7 @@ export type { AdaptiveConcurrencyOptions } from './utils/adaptive-concurrency.js
 export { resolveMaxTokens, estimateTokenCount } from './utils/token-estimate.js';
 
 // Pricing
-export { getModelPricing, calculateCost, PRICING_AS_OF, PRICING_MODEL_COUNT } from './generated/pricing.js';
+export { getModelPricing, calculateCost, calculateProviderCost, PRICING_AS_OF, PRICING_MODEL_COUNT } from './generated/pricing.js';
 export type { PricingEntry } from './generated/pricing.js';
+export { providerPricingMultiplier } from './pricing/provider-policy.js';
+export type { PricingMode } from './pricing/provider-policy.js';

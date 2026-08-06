@@ -106,6 +106,7 @@ export interface ChatCompletionRequest {
   user?: string;
   service_tier?: 'auto' | 'flex';
   cache?: PromptCacheOptions;
+  reasoning?: { effort?: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' };
 
   // Anymodel-specific (mirrors OpenRouter)
   models?: string[];

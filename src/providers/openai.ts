@@ -20,6 +20,7 @@ const SUPPORTED_PARAMS = new Set([
   'temperature', 'max_tokens', 'top_p', 'frequency_penalty', 'presence_penalty',
   'seed', 'stop', 'stream', 'logprobs', 'top_logprobs', 'response_format',
   'tools', 'tool_choice', 'user', 'logit_bias', 'service_tier', 'cache',
+  'reasoning',
 ]);
 
 export function createOpenAIAdapter(
@@ -105,11 +106,30 @@ export function createOpenAIAdapter(
     return Array.isArray(tools) && tools.some(tool => tool?.type === 'web_search');
   }
 
-  function responsesInput(request: ChatCompletionRequest): Array<{ role: string; content: unknown }> {
-    return request.messages.map(message => ({
-      role: message.role,
-      content: message.content,
-    }));
+  function usesResponses(request: ChatCompletionRequest): boolean {
+    return hasWebSearchTool(request.tools) || request.reasoning !== undefined;
+  }
+
+  function responsesTools(tools: Tool[] | undefined): unknown[] | undefined {
+    if (!tools) return undefined;
+    return tools.map(tool => tool.type === 'function'
+      ? { type: 'function', name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters }
+      : tool);
+  }
+
+  function responsesToolChoice(choice: ChatCompletionRequest['tool_choice']): unknown {
+    if (!choice || typeof choice === 'string') return choice;
+    return { type: 'function', name: choice.function.name };
+  }
+
+  function responsesInput(request: ChatCompletionRequest): unknown[] {
+    const input: unknown[] = [];
+    for (const message of request.messages) {
+      if (message.role === 'tool') input.push({ type: 'function_call_output', call_id: message.tool_call_id, output: message.content });
+      else if (message.role === 'assistant' && message.tool_calls?.length) input.push(...message.tool_calls.map(call => ({ type: 'function_call', call_id: call.id, name: call.function.name, arguments: call.function.arguments })));
+      else input.push({ role: message.role, content: message.content });
+    }
+    return input;
   }
 
   function textFromResponses(response: any): string {
@@ -175,8 +195,8 @@ export function createOpenAIAdapter(
     const body: Record<string, unknown> = {
       model: request.model,
       input: responsesInput(request),
-      tools: request.tools,
-      tool_choice: request.tool_choice ?? 'required',
+      tools: responsesTools(request.tools),
+      tool_choice: responsesToolChoice(request.tool_choice) ?? 'required',
       include: ['web_search_call.action.sources'],
     };
     if (request.max_tokens !== undefined) body.max_output_tokens = request.max_tokens;
@@ -185,6 +205,7 @@ export function createOpenAIAdapter(
     if (request.seed !== undefined) body.seed = request.seed;
     if (request.user !== undefined) body.user = request.user;
     if (request.service_tier !== undefined) body.service_tier = request.service_tier;
+    if (request.reasoning !== undefined) body.reasoning = request.reasoning;
     if (cacheStrategy === 'openai' && request.cache?.key !== undefined) body.prompt_cache_key = request.cache.key;
     if (cacheStrategy === 'openai' && request.cache?.ttl !== undefined) {
       body.prompt_cache_retention = request.cache.ttl === '24h' ? '24h' : 'in_memory';
@@ -204,7 +225,7 @@ export function createOpenAIAdapter(
     name: 'openai',
 
     translateRequest(request: ChatCompletionRequest): unknown {
-      return hasWebSearchTool(request.tools) ? buildResponsesBody(request) : buildRequestBody(request);
+      return usesResponses(request) ? buildResponsesBody(request) : buildRequestBody(request);
     },
 
     translateResponse(response: unknown): ChatCompletion {
@@ -227,6 +248,11 @@ export function createOpenAIAdapter(
           ],
           usage: usageFromResponses(r),
         };
+        const toolCalls = r.output.filter((item: any) => item?.type === 'function_call').map((item: any) => ({ id: item.call_id, type: 'function' as const, function: { name: item.name, arguments: item.arguments } }));
+        if (toolCalls.length) {
+          result.choices[0]!.message.tool_calls = toolCalls;
+          result.choices[0]!.finish_reason = 'tool_calls';
+        }
         if (r.output) (result as any).output = r.output;
         if (r.usage) (result as any).raw_usage = r.usage;
         if (r.usage?.server_side_tool_usage_details) {
@@ -339,19 +365,19 @@ export function createOpenAIAdapter(
     },
 
     async sendRequest(request: ChatCompletionRequest): Promise<ChatCompletion> {
-      const body = hasWebSearchTool(request.tools) ? buildResponsesBody(request) : buildRequestBody(request);
+      const body = usesResponses(request) ? buildResponsesBody(request) : buildRequestBody(request);
       const headers = buildRequestHeaders(request);
       const timeout = request.service_tier === 'flex' ? getFlexTimeout() : undefined;
-      const res = await makeRequest(hasWebSearchTool(request.tools) ? '/responses' : '/chat/completions', body, 'POST', timeout, headers);
+      const res = await makeRequest(usesResponses(request) ? '/responses' : '/chat/completions', body, 'POST', timeout, headers);
       const json = await res.json();
       return adapter.translateResponse(json);
     },
 
     async sendRequestWithMeta(request: ChatCompletionRequest): Promise<ChatCompletionWithMeta> {
-      const body = hasWebSearchTool(request.tools) ? buildResponsesBody(request) : buildRequestBody(request);
+      const body = usesResponses(request) ? buildResponsesBody(request) : buildRequestBody(request);
       const headers = buildRequestHeaders(request);
       const timeout = request.service_tier === 'flex' ? getFlexTimeout() : undefined;
-      const res = await makeRequest(hasWebSearchTool(request.tools) ? '/responses' : '/chat/completions', body, 'POST', timeout, headers);
+      const res = await makeRequest(usesResponses(request) ? '/responses' : '/chat/completions', body, 'POST', timeout, headers);
       const meta = extractResponseMeta(res);
       const json = await res.json();
       return { completion: adapter.translateResponse(json), meta };

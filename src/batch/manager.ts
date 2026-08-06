@@ -8,7 +8,7 @@ import type {
 } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
-import { calculateCost } from '../generated/pricing.js';
+import { calculateProviderCost } from '../generated/pricing.js';
 import { BatchStore } from './store.js';
 import { AdaptiveConcurrencyController } from '../utils/adaptive-concurrency.js';
 import type { Router } from '../router.js';
@@ -194,11 +194,7 @@ export class BatchManager {
       if (result.response) {
         usage.total_prompt_tokens += result.response.usage.prompt_tokens;
         usage.total_completion_tokens += result.response.usage.completion_tokens;
-        usage.estimated_cost += calculateCost(
-          result.response.model || batch.model,
-          result.response.usage.prompt_tokens,
-          result.response.usage.completion_tokens,
-        ) * batchDiscount;
+        usage.estimated_cost += calculateProviderCost({ model: result.response.model || batch.model, usage: { promptTokens: result.response.usage.prompt_tokens, completionTokens: result.response.usage.completion_tokens }, serviceTier: batch.service_tier, batchMode: batch.batch_mode === 'native' ? 'native' : 'concurrent' }).estimatedCost;
       }
     }
 

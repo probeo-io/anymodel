@@ -98,6 +98,8 @@ function generateSource(pricing: Map<string, PricingEntry>): string {
 // Source: OpenRouter /api/v1/models
 // Generated: ${now}
 
+import { providerPricingMultiplier, type PricingMode } from '../pricing/provider-policy.js';
+
 export interface PricingEntry {
   /** Cost per token for input/prompt */
   prompt: number;
@@ -158,10 +160,25 @@ export function calculateCost(
   modelId: string,
   promptTokens: number,
   completionTokens: number,
+  cacheReadTokens = 0,
+  cacheWriteTokens = 0,
 ): number {
   const pricing = getModelPricing(modelId);
   if (!pricing) return 0;
-  return (promptTokens * pricing.prompt) + (completionTokens * pricing.completion);
+  const cachedTokens = cacheReadTokens + cacheWriteTokens;
+  const uncachedPromptTokens = Math.max(0, promptTokens - cachedTokens);
+  return (uncachedPromptTokens * pricing.prompt)
+    + (cacheReadTokens * (pricing.cacheRead ?? pricing.prompt))
+    + (cacheWriteTokens * (pricing.cacheWrite ?? pricing.prompt))
+    + (completionTokens * pricing.completion);
+}
+
+export function calculateProviderCost(input: { model: string; usage: { promptTokens: number; completionTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }; serviceTier?: 'auto' | 'flex'; batchMode?: 'native' | 'concurrent' }): { estimatedCost: number; multiplier: number; pricing: PricingEntry | null } {
+  const pricing = getModelPricing(input.model);
+  const provider = input.model.split('/')[0];
+  const mode: PricingMode = input.batchMode === 'native' ? 'native_batch' : input.serviceTier === 'flex' ? 'flex' : 'standard';
+  const multiplier = providerPricingMultiplier(provider, mode);
+  return { estimatedCost: calculateCost(input.model, input.usage.promptTokens, input.usage.completionTokens, input.usage.cacheReadTokens, input.usage.cacheWriteTokens) * multiplier, multiplier, pricing };
 }
 `;
 }

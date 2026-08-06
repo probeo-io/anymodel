@@ -35,6 +35,19 @@ describe('OpenAI adapter', () => {
     expect(body.text).toEqual({ format: { type: 'json_object' } });
   });
 
+  it('uses Responses shape and translates function tools when reasoning is configured', () => {
+    const body = adapter.translateRequest(request({
+      reasoning: { effort: 'low' },
+      tools: [{ type: 'function', function: { name: 'list_pages', description: 'List pages', parameters: { type: 'object' } } }],
+      tool_choice: { type: 'function', function: { name: 'list_pages' } },
+    })) as any;
+
+    expect(body.input).toEqual([{ role: 'user', content: 'Research Texas LLC fees.' }]);
+    expect(body.reasoning).toEqual({ effort: 'low' });
+    expect(body.tools).toEqual([{ type: 'function', name: 'list_pages', description: 'List pages', parameters: { type: 'object' } }]);
+    expect(body.tool_choice).toEqual({ type: 'function', name: 'list_pages' });
+  });
+
   it('translates Responses output into chat completion shape and preserves metadata', () => {
     const completion = adapter.translateResponse({
       id: 'resp_123',
@@ -54,5 +67,14 @@ describe('OpenAI adapter', () => {
     expect(completion.usage).toEqual({ prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 });
     expect(completion.output).toEqual([{ type: 'web_search_call' }]);
     expect(completion.server_side_tool_usage_details).toEqual({ web_search_calls: 1 });
+  });
+
+  it('translates Responses function calls into common tool calls', () => {
+    const completion = adapter.translateResponse({
+      id: 'resp_456', model: 'gpt-5.6-luna', usage: { input_tokens: 1, output_tokens: 1 },
+      output: [{ type: 'function_call', call_id: 'call_1', name: 'list_pages', arguments: '{"customer":"c"}' }],
+    });
+    expect(completion.choices[0].finish_reason).toBe('tool_calls');
+    expect(completion.choices[0].message.tool_calls).toEqual([{ id: 'call_1', type: 'function', function: { name: 'list_pages', arguments: '{"customer":"c"}' } }]);
   });
 });

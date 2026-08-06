@@ -39,6 +39,10 @@ afterEach(() => {
 });
 
 describe('Batch cost calculation', () => {
+  it('charges cache reads and writes at their generated rates', () => {
+    const cost = calculateCost('openai/gpt-5.6-luna', 1_000_000, 100_000, 400_000, 100_000);
+    expect(cost).toBeCloseTo(500_000 * 0.0000001 + 400_000 * 0.00000001 + 100_000 * 0.000000125 + 100_000 * 0.0000006, 12);
+  });
   const model = 'openai/gpt-4o';
   const requests = [
     { custom_id: 'req-1', messages: [{ role: 'user' as const, content: 'Hello' }] },
