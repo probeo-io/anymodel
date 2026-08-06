@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.10.0] - 2026-08-06
+
+### Added
+
+- **OpenAI Responses API support for reasoning models** — set `reasoning: { effort: 'none'|'low'|'medium'|'high'|'xhigh'|'max' }` on a request to route it through `/v1/responses`. The OpenAI adapter translates the common tool-call contract to/from Responses function-call items (function tools, `function_call`/`function_call_output`), so callers can run a full reasoning + tool-call loop without switching to a provider-specific SDK. Existing requests without `reasoning` are unaffected.
+- **`calculateProviderCost()`** — normalized, versioned cost accounting that replaces flat batch usage of `calculateCost()`. Accounts for cache read/write tokens separately from uncached prompt tokens, and treats OpenAI Flex/Batch discounts as OpenAI-specific pricing policy (`src/pricing/provider-policy.ts`) rather than a generic 50% multiplier applied to every provider.
+- `calculateCost()` now accepts optional `cacheReadTokens`/`cacheWriteTokens` params, billed at each model's generated `cacheRead`/`cacheWrite` rates when available.
+
+## [0.9.1] - 2026-06-01
+
+### Added
+
+- **Prompt caching** — `cache` option on requests (`src/cache.ts`) for constructing stable, reusable prompt cache keys across Anthropic, OpenAI, and Google.
+- **xAI provider** — `XAI_API_KEY`, `xai/grok-4` and other Grok models.
+
+## [0.9.0] - 2026-05-01
+
+### Added
+
+- Live pricing refresh via the OpenRouter API at publish time (338 models at the time of release)
+- New models: `claude-opus-4-7`, `gpt-5.5`, `gpt-5.5-pro`
+
+### Fixed
+
+- Anthropic fallback model IDs and context lengths corrected against official docs
+
 ## [0.8.0] - 2026-03-30
 
 ### Added
