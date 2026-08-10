@@ -8,12 +8,15 @@ export interface Message {
   name?: string;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
+  /** Provider-neutral marker for the end of a reusable prompt prefix. */
+  cacheBreakpoint?: boolean;
 }
 
 export interface ContentPart {
-  type: 'text' | 'image_url';
+  type: 'text' | 'input_text' | 'image_url';
   text?: string;
   image_url?: { url: string; detail?: 'auto' | 'low' | 'high' };
+  prompt_cache_breakpoint?: { mode: 'explicit' };
 }
 
 // ─── Tools ───────────────────────────────────────────────────────────────────
@@ -68,7 +71,9 @@ export interface PromptCacheOptions {
   /** Stable routing/cache key for requests with the same reusable prompt prefix. */
   key?: string;
   /** Desired provider cache retention, when supported. */
-  ttl?: '5m' | '1h' | '24h';
+  ttl?: '5m' | '1h' | '24h' | '30m';
+  /** GPT-5.6+ cache policy. Explicit mode only caches marked breakpoints. */
+  mode?: 'explicit';
 }
 
 // ─── Chat Completion Request ─────────────────────────────────────────────────

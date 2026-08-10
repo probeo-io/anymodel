@@ -80,7 +80,7 @@ export function createPerplexityAdapter(apiKey: string): ProviderAdapter {
   function buildRequestBody(request: ChatCompletionRequest): Record<string, unknown> {
     const body: Record<string, unknown> = {
       model: request.model,
-      messages: request.messages,
+      messages: request.messages.map(({ cacheBreakpoint: _, ...message }) => message),
     };
 
     if (request.temperature !== undefined) body.temperature = request.temperature;

@@ -27,6 +27,7 @@ import { createGoogleBatchAdapter } from './providers/google-batch.js';
 import { createXAIBatchAdapter } from './providers/xai-batch.js';
 import { configureFsIO } from './utils/fs-io.js';
 import { setDefaultTimeout } from './utils/fetch-with-timeout.js';
+import { resolvePromptCache } from './cache.js';
 
 export class AnyModel {
   private registry: ProviderRegistry;
@@ -257,12 +258,15 @@ export class AnyModel {
 
   private applyDefaults(request: ChatCompletionRequest): ChatCompletionRequest {
     const defaults = this.config.defaults;
-    if (!defaults) return request;
-
-    return {
+    const merged = !defaults ? request : {
       ...request,
       temperature: request.temperature ?? defaults.temperature,
       max_tokens: request.max_tokens ?? defaults.max_tokens,
+    };
+    if (!merged.cache?.key || merged.cache.mode !== 'explicit') return merged;
+    return {
+      ...merged,
+      cache: resolvePromptCache(merged.cache),
     };
   }
 

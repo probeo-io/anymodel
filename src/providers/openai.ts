@@ -127,9 +127,32 @@ export function createOpenAIAdapter(
     for (const message of request.messages) {
       if (message.role === 'tool') input.push({ type: 'function_call_output', call_id: message.tool_call_id, output: message.content });
       else if (message.role === 'assistant' && message.tool_calls?.length) input.push(...message.tool_calls.map(call => ({ type: 'function_call', call_id: call.id, name: call.function.name, arguments: call.function.arguments })));
-      else input.push({ role: message.role, content: message.content });
+      else input.push({ role: message.role, content: responseContent(message) });
     }
     return input;
+  }
+
+  function responseContent(message: ChatCompletionRequest['messages'][number]): unknown {
+    if (!message.cacheBreakpoint) return message.content;
+    if (typeof message.content === 'string') {
+      return [{ type: 'input_text', text: message.content, prompt_cache_breakpoint: { mode: 'explicit' } }];
+    }
+    return message.content.map((part, index, parts) => ({
+      ...part,
+      type: part.type === 'text' ? 'input_text' : part.type,
+      ...(index === parts.length - 1 ? { prompt_cache_breakpoint: { mode: 'explicit' as const } } : {}),
+    }));
+  }
+
+  function chatContent(message: ChatCompletionRequest['messages'][number]): unknown {
+    const parts = typeof message.content === 'string'
+      ? [{ type: 'text', text: message.content }]
+      : message.content.map((part) => part.type === 'input_text' ? { ...part, type: 'text' } : part);
+    if (!message.cacheBreakpoint) return typeof message.content === 'string' ? message.content : parts;
+    return parts.map((part, index) => ({
+      ...part,
+      ...(index === parts.length - 1 ? { prompt_cache_breakpoint: { mode: 'explicit' as const } } : {}),
+    }));
   }
 
   function textFromResponses(response: any): string {
@@ -159,7 +182,10 @@ export function createOpenAIAdapter(
   function buildRequestBody(request: ChatCompletionRequest): Record<string, unknown> {
     const body: Record<string, unknown> = {
       model: request.model,
-      messages: request.messages,
+      messages: request.messages.map((message) => {
+        const { cacheBreakpoint: _, ...base } = message;
+        return { ...base, content: chatContent(message) };
+      }),
     };
 
     // Copy over optional params
@@ -184,7 +210,9 @@ export function createOpenAIAdapter(
     if (request.user !== undefined) body.user = request.user;
     if (request.service_tier !== undefined) body.service_tier = request.service_tier;
     if (cacheStrategy === 'openai' && request.cache?.key !== undefined) body.prompt_cache_key = request.cache.key;
-    if (cacheStrategy === 'openai' && request.cache?.ttl !== undefined) {
+    if (cacheStrategy === 'openai' && request.cache?.mode !== undefined) {
+      body.prompt_cache_options = { mode: request.cache.mode, ...(request.cache.ttl === undefined ? {} : { ttl: request.cache.ttl }) };
+    } else if (cacheStrategy === 'openai' && request.cache?.ttl !== undefined) {
       body.prompt_cache_retention = request.cache.ttl === '24h' ? '24h' : 'in_memory';
     }
 
@@ -207,7 +235,9 @@ export function createOpenAIAdapter(
     if (request.service_tier !== undefined) body.service_tier = request.service_tier;
     if (request.reasoning !== undefined) body.reasoning = request.reasoning;
     if (cacheStrategy === 'openai' && request.cache?.key !== undefined) body.prompt_cache_key = request.cache.key;
-    if (cacheStrategy === 'openai' && request.cache?.ttl !== undefined) {
+    if (cacheStrategy === 'openai' && request.cache?.mode !== undefined) {
+      body.prompt_cache_options = { mode: request.cache.mode, ...(request.cache.ttl === undefined ? {} : { ttl: request.cache.ttl }) };
+    } else if (cacheStrategy === 'openai' && request.cache?.ttl !== undefined) {
       body.prompt_cache_retention = request.cache.ttl === '24h' ? '24h' : 'in_memory';
     }
     if (request.response_format?.type === 'json_object') body.text = { format: { type: 'json_object' } };

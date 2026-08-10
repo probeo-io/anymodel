@@ -112,7 +112,7 @@ export function createXAIAdapter(apiKey: string, baseURL = XAI_API_BASE): Provid
   function buildChatBody(request: ChatCompletionRequest): Record<string, unknown> {
     const body: Record<string, unknown> = {
       model: request.model,
-      messages: request.messages,
+      messages: request.messages.map(({ cacheBreakpoint: _, ...message }) => message),
     };
     if (request.temperature !== undefined) body.temperature = request.temperature;
     if (request.max_tokens !== undefined) body.max_tokens = request.max_tokens;
