@@ -8,7 +8,7 @@ const API_BASE = 'https://api.deepinfra.com/v1/openai';
 
 function request(overrides: Partial<ChatCompletionRequest> = {}): ChatCompletionRequest {
   return {
-    model: 'meta-llama/Llama-3.3-70B-Instruct',
+    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
     messages: [{ role: 'user', content: 'Summarize Texas LLC filing fees.' }],
     ...overrides,
   };
@@ -68,7 +68,7 @@ describe('DeepInfra adapter', () => {
   it('builds an OpenAI-shaped chat body and keeps the namespaced model id intact', () => {
     const body = adapter.translateRequest(request({ temperature: 0.2, max_tokens: 512 })) as any;
 
-    expect(body.model).toBe('meta-llama/Llama-3.3-70B-Instruct');
+    expect(body.model).toBe('meta-llama/Llama-3.3-70B-Instruct-Turbo');
     expect(body.messages).toEqual([{ role: 'user', content: 'Summarize Texas LLC filing fees.' }]);
     expect(body.temperature).toBe(0.2);
     expect(body.max_tokens).toBe(512);
@@ -97,14 +97,14 @@ describe('DeepInfra adapter', () => {
   it('prefixes the model and normalizes the generation id', () => {
     const completion = adapter.translateResponse({
       id: 'chatcmpl-abc123',
-      model: 'meta-llama/Llama-3.3-70B-Instruct',
+      model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
       created: 1711471533,
       choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
     });
 
     expect(completion.id).toBe('gen-abc123');
-    expect(completion.model).toBe('deepinfra/meta-llama/Llama-3.3-70B-Instruct');
+    expect(completion.model).toBe('deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo');
     expect(completion.usage.total_tokens).toBe(12);
   });
 
@@ -126,7 +126,7 @@ describe('DeepInfra adapter', () => {
   it('keeps only models tagged for the chat surface', async () => {
     stubFetch(() => jsonResponse({
       data: [
-        model('meta-llama/Llama-3.3-70B-Instruct', ['chat'], { context_length: 131072 }),
+        model('meta-llama/Llama-3.3-70B-Instruct-Turbo', ['chat'], { context_length: 131072 }),
         // Nothing in these ids marks them as non-chat — only the tag does.
         model('BAAI/bge-large-en-v1.5', ['embed']),
         model('hexgrad/Kokoro-82M', ['tts']),
@@ -138,7 +138,7 @@ describe('DeepInfra adapter', () => {
 
     const models = await adapter.listModels();
 
-    expect(models.map(m => m.id)).toEqual(['deepinfra/meta-llama/Llama-3.3-70B-Instruct']);
+    expect(models.map(m => m.id)).toEqual(['deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo']);
     expect(models[0]!.context_length).toBe(131072);
   });
 
@@ -205,8 +205,8 @@ describe('DeepInfra adapter', () => {
   it('translates a streamed response and re-prefixes each chunk', async () => {
     const chunks: string[] = [];
     const stream = sseStream([
-      'data: {"id":"chatcmpl-1","model":"meta-llama/Llama-3.3-70B-Instruct","choices":[{"index":0,"delta":{"content":"He"}}]}\n',
-      'data: {"id":"chatcmpl-1","model":"meta-llama/Llama-3.3-70B-Instruct","choices":[{"index":0,"delta":{"content":"llo"}}]}\n',
+      'data: {"id":"chatcmpl-1","model":"meta-llama/Llama-3.3-70B-Instruct-Turbo","choices":[{"index":0,"delta":{"content":"He"}}]}\n',
+      'data: {"id":"chatcmpl-1","model":"meta-llama/Llama-3.3-70B-Instruct-Turbo","choices":[{"index":0,"delta":{"content":"llo"}}]}\n',
       'data: [DONE]\n',
       'data: {"id":"chatcmpl-1","model":"ignored"}\n',
     ]);
@@ -218,7 +218,7 @@ describe('DeepInfra adapter', () => {
     expect(chunks).toHaveLength(2);
     const first = JSON.parse(chunks[0]!);
     expect(first.id).toBe('gen-1');
-    expect(first.model).toBe('deepinfra/meta-llama/Llama-3.3-70B-Instruct');
+    expect(first.model).toBe('deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo');
   });
 
   it('maps DeepInfra HTTP failures onto anymodel error codes', async () => {
@@ -241,7 +241,7 @@ describe('DeepInfra adapter', () => {
   it('posts chat completions to the OpenAI-compatible path', async () => {
     const calls = stubFetch(() => jsonResponse({
       id: 'chatcmpl-9',
-      model: 'meta-llama/Llama-3.3-70B-Instruct',
+      model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
       choices: [],
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
     }));
@@ -267,7 +267,7 @@ describe('DeepInfra batch adapter', () => {
       return jsonResponse({ id: 'batch_abc123', status: 'validating' });
     });
 
-    const result = await batchAdapter.createBatch('meta-llama/Llama-3.3-70B-Instruct', requests, {
+    const result = await batchAdapter.createBatch('meta-llama/Llama-3.3-70B-Instruct-Turbo', requests, {
       metadata: { description: 'nightly eval run' },
     });
 
@@ -328,7 +328,7 @@ describe('DeepInfra batch adapter', () => {
               status_code: 200,
               body: {
                 id: 'chatcmpl-1',
-                model: 'meta-llama/Llama-3.3-70B-Instruct',
+                model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
                 created: 1711471533,
                 choices: [{ index: 0, message: { role: 'assistant', content: 'one' }, finish_reason: 'stop' }],
                 usage: { prompt_tokens: 3, completion_tokens: 1, total_tokens: 4 },
@@ -346,7 +346,7 @@ describe('DeepInfra batch adapter', () => {
     expect(results).toHaveLength(2);
     expect(results[0]).toMatchObject({ custom_id: 'req-1', status: 'success' });
     expect(results[0]!.response!.id).toBe('gen-1');
-    expect(results[0]!.response!.model).toBe('deepinfra/meta-llama/Llama-3.3-70B-Instruct');
+    expect(results[0]!.response!.model).toBe('deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo');
     expect(results[1]).toMatchObject({
       custom_id: 'req-2',
       status: 'error',

@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **DeepInfra provider** — `DEEPINFRA_API_KEY`, models addressed as `deepinfra/<org>/<model>` (e.g. `deepinfra/meta-llama/Llama-3.3-70B-Instruct`). Chat completions with streaming, tool calling, structured outputs, and `reasoning: { effort }`. `listModels()` reads DeepInfra's per-model metadata, so it returns only chat-surface models with their real context lengths, per-token pricing, and vision/cache/reasoning capabilities.
+- **DeepInfra provider** — `DEEPINFRA_API_KEY`, models addressed as `deepinfra/<org>/<model>` (e.g. `deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo`). Chat completions with streaming, tool calling, structured outputs, and `reasoning: { effort }`. `listModels()` reads DeepInfra's per-model metadata, so it returns only chat-surface models with their real context lengths, per-token pricing, and vision/cache/reasoning capabilities.
 - **DeepInfra native batch** — OpenAI-compatible JSONL upload → `/batches` → poll → download, wired into `BatchManager` like the other native batch providers. Batch runs are billed at 20% off, reflected in `providerPricingMultiplier('deepinfra', 'native_batch')`.
 - Prompt caching on DeepInfra is automatic; a request's `cache.key` is forwarded as `prompt_cache_key` to partition the cache. DeepInfra exposes no retention or mode controls, so the rest of `cache` is not sent.
 

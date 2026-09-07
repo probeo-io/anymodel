@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { BatchManager } from '../src/batch/manager.js';
-import { calculateCost, calculateProviderCost, getModelPricing } from '../src/generated/pricing.js';
+import { MODEL_PRICING, calculateCost, calculateProviderCost, getModelPricing } from '../src/generated/pricing.js';
 import type { Router } from '../src/router.js';
 import type { ChatCompletion, ChatCompletionWithMeta } from '../src/types.js';
 
@@ -61,17 +61,22 @@ describe('Batch cost calculation', () => {
   it('bills DeepInfra requests from DeepInfra\'s own rates, not the originating org\'s', () => {
     // OpenRouter lists the same open weights under meta-llama/…; what DeepInfra
     // charges to serve them is a separate number and must be keyed separately.
-    const rates = getModelPricing('deepinfra/meta-llama/Llama-3.3-70B-Instruct');
+    // Assert an exact key, not just a non-null lookup: getModelPricing falls
+    // back to prefix matching, so a typo'd or delisted id still resolves — to
+    // some neighbouring model's rates.
+    expect(MODEL_PRICING['deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo']).toBeDefined();
+
+    const rates = getModelPricing('deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo');
     expect(rates).not.toBeNull();
 
-    const cost = calculateCost('deepinfra/meta-llama/Llama-3.3-70B-Instruct', 1_000, 1_000);
+    const cost = calculateCost('deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo', 1_000, 1_000);
     expect(cost).toBeCloseTo(1_000 * rates!.prompt + 1_000 * rates!.completion, 12);
     expect(cost).toBeGreaterThan(0);
   });
 
   it('applies the 20% DeepInfra native batch discount', () => {
     const usage = { promptTokens: 100_000, completionTokens: 10_000 };
-    const model = 'deepinfra/meta-llama/Llama-3.3-70B-Instruct';
+    const model = 'deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo';
 
     const standard = calculateProviderCost({ model, usage });
     const native = calculateProviderCost({ model, usage, batchMode: 'native' });

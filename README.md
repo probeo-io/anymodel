@@ -65,7 +65,7 @@ Set the env var and go. Models are auto-discovered from each provider's API.
 | Together | `TOGETHER_API_KEY` | `together/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
 | Fireworks | `FIREWORKS_API_KEY` | `fireworks/accounts/fireworks/models/llama-v3p3-70b-instruct` |
 | Perplexity | `PERPLEXITY_API_KEY` | `perplexity/sonar-pro` |
-| DeepInfra | `DEEPINFRA_API_KEY` | `deepinfra/meta-llama/Llama-3.3-70B-Instruct` |
+| DeepInfra | `DEEPINFRA_API_KEY` | `deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
 | Ollama | `OLLAMA_BASE_URL` | `ollama/llama3.3` |
 
 Ollama runs locally with no API key — just set `OLLAMA_BASE_URL` (defaults to `http://localhost:11434/v1`).
@@ -83,7 +83,7 @@ groq/llama-3.3-70b-versatile
 deepseek/deepseek-chat
 xai/grok-4
 perplexity/sonar-pro
-deepinfra/meta-llama/Llama-3.3-70B-Instruct
+deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo
 ollama/llama3.3
 ```
 
