@@ -37,6 +37,17 @@ const PROVIDER_MAP: Record<string, string> = {
   'cohere': 'cohere',
 };
 
+interface OpenRouterOverride {
+  /** Present on long-context tiers; absent on time-window and audio overrides. */
+  min_prompt_tokens?: number;
+  prompt?: string;
+  completion?: string;
+  input_cache_read?: string;
+  input_cache_write?: string;
+  utc_start?: string;
+  utc_end?: string;
+}
+
 interface OpenRouterModel {
   id: string;
   name: string;
@@ -46,6 +57,7 @@ interface OpenRouterModel {
     input_cache_read?: string;
     input_cache_write?: string;
     web_search?: string;
+    overrides?: OpenRouterOverride[];
   };
   context_length: number;
 }
@@ -62,12 +74,52 @@ interface DeepInfraModel {
   };
 }
 
-interface PricingEntry {
+interface PricingTier {
+  minPromptTokens: number;
   prompt: number;
   completion: number;
   cacheRead?: number;
   cacheWrite?: number;
 }
+
+interface PricingEntry {
+  prompt: number;
+  completion: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  tiers?: PricingTier[];
+}
+
+/**
+ * Long-context tiers only. OpenRouter also carries time-window overrides
+ * (`utc_start`/`utc_end`, for off-peak rates) and audio rates in the same
+ * array; both need inputs a static table has no access to at estimate time,
+ * so they are skipped rather than applied as if they were token tiers.
+ */
+function parseTiers(overrides: OpenRouterOverride[] | undefined): PricingTier[] {
+  const tiers: PricingTier[] = [];
+  let skipped = 0;
+
+  for (const override of overrides ?? []) {
+    if (override.min_prompt_tokens === undefined) { skipped++; continue; }
+    if (!override.prompt || !override.completion) { skipped++; continue; }
+
+    const tier: PricingTier = {
+      minPromptTokens: override.min_prompt_tokens,
+      prompt: parseFloat(override.prompt),
+      completion: parseFloat(override.completion),
+    };
+    if (override.input_cache_read) tier.cacheRead = parseFloat(override.input_cache_read);
+    if (override.input_cache_write) tier.cacheWrite = parseFloat(override.input_cache_write);
+    tiers.push(tier);
+  }
+
+  if (skipped > 0) skippedOverrides += skipped;
+  return tiers.sort((a, b) => a.minPromptTokens - b.minPromptTokens);
+}
+
+/** Counted so a growing pile of unhandled override kinds stays visible. */
+let skippedOverrides = 0;
 
 async function fetchPricing(): Promise<Map<string, PricingEntry>> {
   console.log('Fetching pricing from OpenRouter...');
@@ -96,11 +148,18 @@ async function fetchPricing(): Promise<Map<string, PricingEntry>> {
       entry.cacheWrite = parseFloat(model.pricing.input_cache_write);
     }
 
+    const tiers = parseTiers(model.pricing.overrides);
+    if (tiers.length > 0) entry.tiers = tiers;
+
     // Store with OpenRouter ID (provider/model format)
     pricing.set(model.id, entry);
   }
 
-  console.log(`Fetched pricing for ${pricing.size} models`);
+  const tiered = [...pricing.values()].filter(e => e.tiers).length;
+  console.log(`Fetched pricing for ${pricing.size} models (${tiered} with long-context tiers)`);
+  if (skippedOverrides > 0) {
+    console.log(`Skipped ${skippedOverrides} time-window/audio override(s) — not representable in a static table`);
+  }
   return pricing;
 }
 
@@ -152,6 +211,15 @@ function generateSource(pricing: Map<string, PricingEntry>): string {
     const parts = [`prompt: ${entry.prompt}, completion: ${entry.completion}`];
     if (entry.cacheRead !== undefined) parts.push(`cacheRead: ${entry.cacheRead}`);
     if (entry.cacheWrite !== undefined) parts.push(`cacheWrite: ${entry.cacheWrite}`);
+    if (entry.tiers) {
+      const tiers = entry.tiers.map(tier => {
+        const t = [`minPromptTokens: ${tier.minPromptTokens}`, `prompt: ${tier.prompt}`, `completion: ${tier.completion}`];
+        if (tier.cacheRead !== undefined) t.push(`cacheRead: ${tier.cacheRead}`);
+        if (tier.cacheWrite !== undefined) t.push(`cacheWrite: ${tier.cacheWrite}`);
+        return `{ ${t.join(', ')} }`;
+      });
+      parts.push(`tiers: [${tiers.join(', ')}]`);
+    }
     entries.push(`  '${id}': { ${parts.join(', ')} }`);
   }
 
@@ -160,6 +228,15 @@ function generateSource(pricing: Map<string, PricingEntry>): string {
 // Generated: ${now}
 
 import { providerPricingMultiplier, type PricingMode } from '../pricing/provider-policy.js';
+
+export interface PricingTier {
+  /** Applies once a request's prompt reaches this many tokens. */
+  minPromptTokens: number;
+  prompt: number;
+  completion: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
 
 export interface PricingEntry {
   /** Cost per token for input/prompt */
@@ -170,6 +247,12 @@ export interface PricingEntry {
   cacheRead?: number;
   /** Cost per token for cached input writes */
   cacheWrite?: number;
+  /**
+   * Long-context pricing, ascending by threshold. Several providers charge
+   * more past a prompt size — OpenAI doubles input above 272k tokens on some
+   * models, xAI above 200k. Absent when a model bills one flat rate.
+   */
+  tiers?: PricingTier[];
 }
 
 /** Date this pricing data was fetched */
@@ -237,6 +320,28 @@ export function getModelPricing(modelId: string): PricingEntry | null {
 }
 
 /**
+ * The rates in effect for a prompt of this size: the highest long-context tier
+ * the request reaches, or the model's base rates when it reaches none.
+ */
+export function effectiveRates(pricing: PricingEntry, promptTokens: number): PricingEntry {
+  let rates: PricingEntry = pricing;
+  let threshold = -1;
+
+  for (const tier of pricing.tiers ?? []) {
+    if (promptTokens < tier.minPromptTokens || tier.minPromptTokens <= threshold) continue;
+    threshold = tier.minPromptTokens;
+    rates = {
+      prompt: tier.prompt,
+      completion: tier.completion,
+      cacheRead: tier.cacheRead,
+      cacheWrite: tier.cacheWrite,
+    };
+  }
+
+  return rates;
+}
+
+/**
  * Calculate the cost for a request given token counts.
  */
 export function calculateCost(
@@ -248,12 +353,15 @@ export function calculateCost(
 ): number {
   const pricing = getModelPricing(modelId);
   if (!pricing) return 0;
+  // Tiers key off the full prompt, cached portion included — that is what the
+  // provider measures the request against.
+  const rates = effectiveRates(pricing, promptTokens);
   const cachedTokens = cacheReadTokens + cacheWriteTokens;
   const uncachedPromptTokens = Math.max(0, promptTokens - cachedTokens);
-  return (uncachedPromptTokens * pricing.prompt)
-    + (cacheReadTokens * (pricing.cacheRead ?? pricing.prompt))
-    + (cacheWriteTokens * (pricing.cacheWrite ?? pricing.prompt))
-    + (completionTokens * pricing.completion);
+  return (uncachedPromptTokens * rates.prompt)
+    + (cacheReadTokens * (rates.cacheRead ?? rates.prompt))
+    + (cacheWriteTokens * (rates.cacheWrite ?? rates.prompt))
+    + (completionTokens * rates.completion);
 }
 
 export function calculateProviderCost(input: { model: string; usage: { promptTokens: number; completionTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }; serviceTier?: 'auto' | 'flex'; batchMode?: 'native' | 'concurrent' }): { estimatedCost: number; multiplier: number; pricing: PricingEntry | null } {

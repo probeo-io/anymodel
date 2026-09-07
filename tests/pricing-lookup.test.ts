@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MODEL_PRICING, getModelPricing } from '../src/generated/pricing.js';
+import { MODEL_PRICING, calculateCost, effectiveRates, getModelPricing } from '../src/generated/pricing.js';
 
 const keys = Object.keys(MODEL_PRICING);
 const normalize = (id: string) => id.replace(/(\d+)\.(\d+)/g, '$1-$2');
@@ -66,5 +66,50 @@ describe('getModelPricing resolution', () => {
 
   it('returns null for a model it has never heard of', () => {
     expect(getModelPricing('notaprovider/notamodel-9000')).toBeNull();
+  });
+});
+
+describe('long-context pricing tiers', () => {
+  const tiered = Object.entries(MODEL_PRICING).filter(([, e]) => e.tiers?.length);
+
+  it('carries tiers for the models that have them', () => {
+    expect(tiered.length).toBeGreaterThan(0);
+  });
+
+  it('stores every tier ascending by threshold', () => {
+    const unsorted = tiered.filter(([, e]) =>
+      e.tiers!.some((tier, i) => i > 0 && tier.minPromptTokens <= e.tiers![i - 1]!.minPromptTokens));
+    expect(unsorted.map(([id]) => id)).toEqual([]);
+  });
+
+  it('charges base rates below the first threshold and tier rates at it', () => {
+    for (const [, entry] of tiered) {
+      const first = entry.tiers![0]!;
+      expect(effectiveRates(entry, first.minPromptTokens - 1)).toBe(entry);
+      expect(effectiveRates(entry, first.minPromptTokens).prompt).toBe(first.prompt);
+    }
+  });
+
+  it('applies the highest tier a prompt reaches', () => {
+    const multi = tiered.find(([, e]) => e.tiers!.length > 1);
+    if (!multi) return;
+    const tiers = multi[1].tiers!;
+    const top = tiers[tiers.length - 1]!;
+    expect(effectiveRates(multi[1], top.minPromptTokens * 2).prompt).toBe(top.prompt);
+  });
+
+  it('bills a long prompt at the tier rate, not the base rate', () => {
+    const [id, entry] = tiered.find(([i]) => !i.includes(':batch'))!;
+    const tier = entry.tiers![0]!;
+    const promptTokens = tier.minPromptTokens;
+
+    expect(calculateCost(id, promptTokens, 0)).toBeCloseTo(promptTokens * tier.prompt, 9);
+    // The bug this guards: a flat table charged base rates all the way up.
+    expect(calculateCost(id, promptTokens, 0)).not.toBeCloseTo(promptTokens * entry.prompt, 9);
+  });
+
+  it('leaves flat-rate models alone', () => {
+    const flat = Object.values(MODEL_PRICING).find(e => !e.tiers)!;
+    expect(effectiveRates(flat, 10_000_000)).toBe(flat);
   });
 });

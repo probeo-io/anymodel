@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { BatchManager } from '../src/batch/manager.js';
-import { MODEL_PRICING, calculateCost, calculateProviderCost, getModelPricing } from '../src/generated/pricing.js';
+import { MODEL_PRICING, calculateCost, calculateProviderCost, effectiveRates, getModelPricing } from '../src/generated/pricing.js';
 import type { Router } from '../src/router.js';
 import type { ChatCompletion, ChatCompletionWithMeta } from '../src/types.js';
 
@@ -43,11 +43,14 @@ describe('Batch cost calculation', () => {
     // Derive the expectation from the table rather than pinning literal rates,
     // which otherwise break this test every time pricing is regenerated.
     const model = 'openai/gpt-5.6-luna';
-    const rates = getModelPricing(model)!;
+    const promptTokens = 1_000_000;
+    // A prompt this long may cross a long-context tier, so bill from the rates
+    // actually in effect at that size rather than the model's base rates.
+    const rates = effectiveRates(getModelPricing(model)!, promptTokens);
     expect(rates.cacheRead).toBeDefined();
     expect(rates.cacheWrite).toBeDefined();
 
-    const cost = calculateCost(model, 1_000_000, 100_000, 400_000, 100_000);
+    const cost = calculateCost(model, promptTokens, 100_000, 400_000, 100_000);
 
     expect(cost).toBeCloseTo(
       500_000 * rates.prompt
