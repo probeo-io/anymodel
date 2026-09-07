@@ -19,6 +19,15 @@ const OUTPUT_PATH = join(__dirname, '..', 'src', 'generated', 'pricing.ts');
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/models';
 const DEEPINFRA_API = 'https://api.deepinfra.com/v1/openai/models';
+const LITELLM_PRICES = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
+
+/**
+ * Providers anymodel routes to directly, and whose rates therefore get a
+ * second opinion. None of the four publish machine-readable pricing of their
+ * own, so OpenRouter is the source and LiteLLM is only a check on it.
+ */
+const CROSS_CHECKED = ['openai/', 'anthropic/', 'google/', 'x-ai/'];
+const LITELLM_PROVIDERS = new Set(['openai', 'anthropic', 'gemini', 'xai']);
 
 /** DeepInfra quotes USD per 1M tokens; the generated table stores per-token. */
 const PER_MILLION = 1_000_000;
@@ -207,7 +216,12 @@ function generateSource(pricing: Map<string, PricingEntry>): string {
   const now = new Date().toISOString();
   const entries: string[] = [];
 
-  for (const [id, entry] of pricing) {
+  // Sorted so a regeneration diffs only where a rate actually moved. Both
+  // upstream APIs return models in an order that shifts between fetches, which
+  // otherwise reshuffles all 500-odd lines and buries the real change.
+  const sorted = [...pricing.entries()].sort(([a], [b]) => a.localeCompare(b));
+
+  for (const [id, entry] of sorted) {
     const parts = [`prompt: ${entry.prompt}, completion: ${entry.completion}`];
     if (entry.cacheRead !== undefined) parts.push(`cacheRead: ${entry.cacheRead}`);
     if (entry.cacheWrite !== undefined) parts.push(`cacheWrite: ${entry.cacheWrite}`);
@@ -374,6 +388,70 @@ export function calculateProviderCost(input: { model: string; usage: { promptTok
 `;
 }
 
+interface LiteLLMEntry {
+  litellm_provider?: string;
+  input_cost_per_token?: number;
+  output_cost_per_token?: number;
+}
+
+/** Reduce a vendor-native or OpenRouter id to a form the two sources share. */
+function crossCheckKey(id: string): string {
+  const bare = id.toLowerCase().split('/').pop() ?? id.toLowerCase();
+  return bare.replace(/-(20\d{6}|v\d+:\d+|latest)$/, '').replace(/[._]/g, '-');
+}
+
+/**
+ * Compare our OpenRouter-derived rates against LiteLLM's independent table and
+ * report anything the two disagree on. This is advisory: a mismatch can mean a
+ * stale entry on either side, or a genuinely different rate, and resolving it
+ * needs a human looking at the vendor's pricing page. A failure to reach
+ * LiteLLM is warned about rather than fatal — it validates the table, it does
+ * not supply it.
+ */
+async function crossCheckRates(pricing: Map<string, PricingEntry>): Promise<void> {
+  console.log('Cross-checking direct-provider rates against LiteLLM...');
+
+  let data: Record<string, LiteLLMEntry>;
+  try {
+    const res = await fetch(LITELLM_PRICES);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    data = await res.json() as Record<string, LiteLLMEntry>;
+  } catch (err) {
+    console.warn(`  Skipped — could not reach LiteLLM: ${(err as Error).message}`);
+    return;
+  }
+
+  const theirs = new Map<string, [number, number]>();
+  for (const [id, entry] of Object.entries(data)) {
+    if (!entry || !LITELLM_PROVIDERS.has(entry.litellm_provider ?? '')) continue;
+    const { input_cost_per_token: input, output_cost_per_token: output } = entry;
+    if (!input || !output) continue;
+    const key = crossCheckKey(id);
+    if (!theirs.has(key)) theirs.set(key, [input, output]);
+  }
+
+  const disagreements: string[] = [];
+  let matched = 0;
+
+  for (const [id, entry] of pricing) {
+    if (id.includes(':batch') || !CROSS_CHECKED.some(prefix => id.startsWith(prefix))) continue;
+    const other = theirs.get(crossCheckKey(id));
+    if (!other) continue;
+    matched++;
+    if (Math.abs(other[0] - entry.prompt) < 1e-12 && Math.abs(other[1] - entry.completion) < 1e-12) continue;
+    disagreements.push(
+      `  ! ${id.padEnd(38)} ours ${(entry.prompt * 1e6).toFixed(3)}/${(entry.completion * 1e6).toFixed(3)}`
+      + `  litellm ${(other[0] * 1e6).toFixed(3)}/${(other[1] * 1e6).toFixed(3)}  per 1M in/out`,
+    );
+  }
+
+  console.log(`  Compared ${matched} models, ${matched - disagreements.length} agree, ${disagreements.length} differ`);
+  for (const line of disagreements) console.log(line);
+  if (disagreements.length > 0) {
+    console.log('  Base rates only. Check the vendor pricing page before trusting a differing figure.');
+  }
+}
+
 async function main() {
   const generatedDir = join(__dirname, '..', 'src', 'generated');
   if (!existsSync(generatedDir)) {
@@ -390,6 +468,7 @@ async function main() {
     ]);
     const pricing = new Map([...openrouter, ...deepinfra]);
     console.log(`Total: ${pricing.size} models`);
+    await crossCheckRates(pricing);
     const source = generateSource(pricing);
     writeFileSync(OUTPUT_PATH, source);
     console.log(`Written to ${OUTPUT_PATH}`);
