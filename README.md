@@ -364,7 +364,7 @@ console.log(stats.total_cost); // auto-calculated from bundled pricing data
 
 ### Auto Pricing / Cost Calculation
 
-Pricing for 323 models is baked in at build time from OpenRouter — always current as of last publish. Costs are calculated automatically from token usage with no configuration needed.
+Pricing for 513 models is baked in at build time from OpenRouter and DeepInfra — always current as of last publish. Costs are calculated automatically from token usage with no configuration needed.
 
 ```typescript
 // Per-request cost on GenerationStats
@@ -568,7 +568,7 @@ npx tsx examples/basic.ts batch
 ## Roadmap
 
 - [ ] **A/B testing** — split routing (% traffic to each model) and compare mode (same request to multiple models, return all responses with stats)
-- [x] **Cost tracking** — per-request and aggregate cost calculation from bundled pricing data (323 models from OpenRouter)
+- [x] **Cost tracking** — per-request and aggregate cost calculation from bundled pricing data (513 models: 409 from OpenRouter, 104 priced directly by DeepInfra)
 - [ ] **Caching** — response caching with configurable TTL for identical requests
 - [x] **Native batch APIs** — OpenAI Batch API (JSONL upload, 50% cost), Anthropic Message Batches (10K requests, async), Google Gemini Batch (50% cost), and DeepInfra Batch (OpenAI-compatible JSONL upload, 20% cost). Auto-detects provider and routes to native API, falls back to concurrent for other providers
 - [x] **Adaptive concurrency** — auto-discover provider rate limit ceilings via TCP slow-start + AIMD, with hard cap support for multi-job workloads

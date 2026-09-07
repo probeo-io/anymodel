@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { BatchManager } from '../src/batch/manager.js';
-import { calculateCost } from '../src/generated/pricing.js';
+import { calculateCost, calculateProviderCost, getModelPricing } from '../src/generated/pricing.js';
 import type { Router } from '../src/router.js';
 import type { ChatCompletion, ChatCompletionWithMeta } from '../src/types.js';
 
@@ -40,8 +40,45 @@ afterEach(() => {
 
 describe('Batch cost calculation', () => {
   it('charges cache reads and writes at their generated rates', () => {
-    const cost = calculateCost('openai/gpt-5.6-luna', 1_000_000, 100_000, 400_000, 100_000);
-    expect(cost).toBeCloseTo(500_000 * 0.0000001 + 400_000 * 0.00000001 + 100_000 * 0.000000125 + 100_000 * 0.0000006, 12);
+    // Derive the expectation from the table rather than pinning literal rates,
+    // which otherwise break this test every time pricing is regenerated.
+    const model = 'openai/gpt-5.6-luna';
+    const rates = getModelPricing(model)!;
+    expect(rates.cacheRead).toBeDefined();
+    expect(rates.cacheWrite).toBeDefined();
+
+    const cost = calculateCost(model, 1_000_000, 100_000, 400_000, 100_000);
+
+    expect(cost).toBeCloseTo(
+      500_000 * rates.prompt
+      + 400_000 * rates.cacheRead!
+      + 100_000 * rates.cacheWrite!
+      + 100_000 * rates.completion,
+      12,
+    );
+  });
+
+  it('bills DeepInfra requests from DeepInfra\'s own rates, not the originating org\'s', () => {
+    // OpenRouter lists the same open weights under meta-llama/…; what DeepInfra
+    // charges to serve them is a separate number and must be keyed separately.
+    const rates = getModelPricing('deepinfra/meta-llama/Llama-3.3-70B-Instruct');
+    expect(rates).not.toBeNull();
+
+    const cost = calculateCost('deepinfra/meta-llama/Llama-3.3-70B-Instruct', 1_000, 1_000);
+    expect(cost).toBeCloseTo(1_000 * rates!.prompt + 1_000 * rates!.completion, 12);
+    expect(cost).toBeGreaterThan(0);
+  });
+
+  it('applies the 20% DeepInfra native batch discount', () => {
+    const usage = { promptTokens: 100_000, completionTokens: 10_000 };
+    const model = 'deepinfra/meta-llama/Llama-3.3-70B-Instruct';
+
+    const standard = calculateProviderCost({ model, usage });
+    const native = calculateProviderCost({ model, usage, batchMode: 'native' });
+
+    expect(standard.multiplier).toBe(1);
+    expect(native.multiplier).toBe(0.8);
+    expect(native.estimatedCost).toBeCloseTo(standard.estimatedCost * 0.8, 12);
   });
   const model = 'openai/gpt-4o';
   const requests = [

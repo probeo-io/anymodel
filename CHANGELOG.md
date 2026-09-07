@@ -10,6 +10,15 @@ All notable changes to this project will be documented in this file.
 - **DeepInfra native batch** — OpenAI-compatible JSONL upload → `/batches` → poll → download, wired into `BatchManager` like the other native batch providers. Batch runs are billed at 20% off, reflected in `providerPricingMultiplier('deepinfra', 'native_batch')`.
 - Prompt caching on DeepInfra is automatic; a request's `cache.key` is forwarded as `prompt_cache_key` to partition the cache. DeepInfra exposes no retention or mode controls, so the rest of `cache` is not sent.
 
+### Changed
+
+- **Pricing data refreshed** — 513 models, up from 398. Adds 52 newly listed models (including `openai/gpt-6-astra`, `anthropic/claude-fable-5.1`, `google/gemini-3.8-flash`, `deepseek/deepseek-v4-pro-0813`) and drops models OpenRouter has delisted.
+- **DeepInfra rates are now bundled** — `scripts/fetch-pricing.ts` also reads DeepInfra's own per-model rates and keys them as `deepinfra/<org>/<model>`. OpenRouter lists the same open weights under their originating org (`meta-llama/…`), which says nothing about what DeepInfra charges to serve them, so a `deepinfra/…` request previously found no pricing entry and cost $0. Both fetches must now succeed for the table to be regenerated.
+
+### Fixed
+
+- `tests/batch-cost.test.ts` derives its expected cost from `getModelPricing()` instead of hardcoded per-token rates, which broke the test on every pricing regeneration.
+
 ## [0.10.0] - 2026-08-06
 
 ### Added
