@@ -1,0 +1,38 @@
+{
+  "$comment": [
+    "Hand-maintained rates that win over the fetched pricing sources.",
+    "",
+    "No vendor among OpenAI, Anthropic, Google and xAI publishes machine-readable",
+    "pricing, so the generated table is only as good as the aggregators behind it.",
+    "Put a rate here when you have read it off the vendor's own pricing page and",
+    "it disagrees with what was fetched, or when a model isn't listed upstream.",
+    "",
+    "Rates are PER MILLION TOKENS, exactly as vendors quote them: $3.50 per 1M is",
+    "3.5, not 0.0000035. The generator converts. A value below 0.001 is rejected",
+    "as an almost-certain per-token typo.",
+    "",
+    "Record 'source' and 'checked' on every entry. The generator warns about any",
+    "entry undated or confirmed over 180 days ago, and tells you when an override",
+    "has become identical to what upstream now returns so you can delete it.",
+    "",
+    "Model ids match the generated table's keys: 'openai/gpt-4o',",
+    "'deepinfra/zai-org/GLM-5.3-Flash'."
+  ],
+
+  "$example": {
+    "openai/some-model": {
+      "inputPerMillion": 4.0,
+      "outputPerMillion": 20.0,
+      "cacheReadPerMillion": 0.4,
+      "cacheWritePerMillion": 5.0,
+      "tiers": [
+        { "minPromptTokens": 272000, "inputPerMillion": 8.0, "outputPerMillion": 30.0 }
+      ],
+      "source": "https://openai.com/api/pricing",
+      "checked": "2026-09-07",
+      "note": "why this override exists"
+    }
+  },
+
+  "models": {}
+}

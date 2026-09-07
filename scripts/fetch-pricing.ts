@@ -13,9 +13,12 @@
 import { writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { applyOverrides, parseOverrides } from './pricing-overrides.js';
+import type { PricingEntry, PricingTier } from './pricing-overrides.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_PATH = join(__dirname, '..', 'src', 'generated', 'pricing.ts');
+const OVERRIDES_PATH = join(__dirname, 'pricing-overrides.json');
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/models';
 const DEEPINFRA_API = 'https://api.deepinfra.com/v1/openai/models';
@@ -81,22 +84,6 @@ interface DeepInfraModel {
       cache_read_tokens?: number;
     };
   };
-}
-
-interface PricingTier {
-  minPromptTokens: number;
-  prompt: number;
-  completion: number;
-  cacheRead?: number;
-  cacheWrite?: number;
-}
-
-interface PricingEntry {
-  prompt: number;
-  completion: number;
-  cacheRead?: number;
-  cacheWrite?: number;
-  tiers?: PricingTier[];
 }
 
 /**
@@ -452,6 +439,35 @@ async function crossCheckRates(pricing: Map<string, PricingEntry>): Promise<void
   }
 }
 
+/**
+ * Load and apply the hand-maintained overrides. A malformed file is fatal:
+ * these rates feed cost accounting, and a silently ignored entry would price
+ * requests wrong while looking like it was working.
+ */
+function applyManualOverrides(pricing: Map<string, PricingEntry>): void {
+  if (!existsSync(OVERRIDES_PATH)) {
+    console.log('No pricing-overrides.json — using fetched rates as-is');
+    return;
+  }
+
+  const overrides = parseOverrides(JSON.parse(readFileSync(OVERRIDES_PATH, 'utf-8')));
+  if (overrides.size === 0) {
+    console.log('Applying manual overrides... none defined');
+    return;
+  }
+
+  const report = applyOverrides(pricing, overrides);
+  console.log(`Applying manual overrides... ${overrides.size} entr${overrides.size === 1 ? 'y' : 'ies'}`);
+  if (report.changed.length) console.log(`  Replaced fetched rates: ${report.changed.join(', ')}`);
+  if (report.added.length) console.log(`  Priced models absent upstream: ${report.added.join(', ')}`);
+  if (report.redundant.length) {
+    console.log(`  Now identical to upstream, safe to delete: ${report.redundant.join(', ')}`);
+  }
+  if (report.stale.length) {
+    console.log(`  Undated or unconfirmed in over 180 days: ${report.stale.join(', ')}`);
+  }
+}
+
 async function main() {
   const generatedDir = join(__dirname, '..', 'src', 'generated');
   if (!existsSync(generatedDir)) {
@@ -468,6 +484,9 @@ async function main() {
     ]);
     const pricing = new Map([...openrouter, ...deepinfra]);
     console.log(`Total: ${pricing.size} models`);
+    applyManualOverrides(pricing);
+    // Cross-check the final table, so an override that fixes a bad upstream
+    // rate shows up as agreement rather than still being reported as a diff.
     await crossCheckRates(pricing);
     const source = generateSource(pricing);
     writeFileSync(OUTPUT_PATH, source);

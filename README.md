@@ -366,6 +366,25 @@ console.log(stats.total_cost); // auto-calculated from bundled pricing data
 
 Pricing for 513 models is baked in at build time from OpenRouter and DeepInfra — always current as of last publish. Costs are calculated automatically from token usage with no configuration needed.
 
+Long-context tiers are applied automatically: models that charge more past a prompt-size threshold (OpenAI above 272k tokens, xAI above 200k) bill at the tier rate, not the entry rate.
+
+No vendor publishes machine-readable pricing, so rates for OpenAI, Anthropic, Google and xAI come from OpenRouter and are cross-checked against LiteLLM's independent table at build time, with any disagreement reported. To pin a rate you have verified yourself — or to price a model no aggregator lists — add it to `scripts/pricing-overrides.json`, written per million tokens as vendors quote them:
+
+```json
+{
+  "models": {
+    "openai/gpt-5.6-sol": {
+      "inputPerMillion": 4.0,
+      "outputPerMillion": 20.0,
+      "source": "https://openai.com/api/pricing",
+      "checked": "2026-09-07"
+    }
+  }
+}
+```
+
+Overrides beat every fetched source. The generator reports any that have gone stale or become redundant.
+
 ```typescript
 // Per-request cost on GenerationStats
 const stats = client.generation.get(response.id);
