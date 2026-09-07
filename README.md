@@ -65,6 +65,7 @@ Set the env var and go. Models are auto-discovered from each provider's API.
 | Together | `TOGETHER_API_KEY` | `together/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
 | Fireworks | `FIREWORKS_API_KEY` | `fireworks/accounts/fireworks/models/llama-v3p3-70b-instruct` |
 | Perplexity | `PERPLEXITY_API_KEY` | `perplexity/sonar-pro` |
+| DeepInfra | `DEEPINFRA_API_KEY` | `deepinfra/meta-llama/Llama-3.3-70B-Instruct` |
 | Ollama | `OLLAMA_BASE_URL` | `ollama/llama3.3` |
 
 Ollama runs locally with no API key — just set `OLLAMA_BASE_URL` (defaults to `http://localhost:11434/v1`).
@@ -82,6 +83,7 @@ groq/llama-3.3-70b-versatile
 deepseek/deepseek-chat
 xai/grok-4
 perplexity/sonar-pro
+deepinfra/meta-llama/Llama-3.3-70B-Instruct
 ollama/llama3.3
 ```
 
@@ -181,7 +183,7 @@ for (const result of results.results) {
 
 ### Submit now, check later
 
-Submit a batch and get back an ID immediately — no need to keep the process running for native batches (OpenAI, Anthropic, Google):
+Submit a batch and get back an ID immediately — no need to keep the process running for native batches (OpenAI, Anthropic, Google, DeepInfra):
 
 ```typescript
 // Submit and get the batch ID
@@ -373,7 +375,7 @@ console.log(stats.total_cost); // e.g. 0.0023
 const results = await client.batches.createAndPoll(request);
 console.log(results.usage.estimated_cost); // total across all requests
 
-// Native batch pricing is automatically 50% off
+// Native batch pricing is applied automatically (50% off; 20% off on DeepInfra)
 // Utility functions also exported
 import { getModelPricing, calculateCost, PRICING_AS_OF, PRICING_MODEL_COUNT } from "@antidrift/anymodel";
 ```
@@ -568,7 +570,7 @@ npx tsx examples/basic.ts batch
 - [ ] **A/B testing** — split routing (% traffic to each model) and compare mode (same request to multiple models, return all responses with stats)
 - [x] **Cost tracking** — per-request and aggregate cost calculation from bundled pricing data (323 models from OpenRouter)
 - [ ] **Caching** — response caching with configurable TTL for identical requests
-- [x] **Native batch APIs** — OpenAI Batch API (JSONL upload, 50% cost), Anthropic Message Batches (10K requests, async), and Google Gemini Batch (50% cost). Auto-detects provider and routes to native API, falls back to concurrent for other providers
+- [x] **Native batch APIs** — OpenAI Batch API (JSONL upload, 50% cost), Anthropic Message Batches (10K requests, async), Google Gemini Batch (50% cost), and DeepInfra Batch (OpenAI-compatible JSONL upload, 20% cost). Auto-detects provider and routes to native API, falls back to concurrent for other providers
 - [x] **Adaptive concurrency** — auto-discover provider rate limit ceilings via TCP slow-start + AIMD, with hard cap support for multi-job workloads
 - [ ] **Result export** — `saveResults()` to write batch results to a configurable output directory
 - [ ] **Prompt logging** — optional request/response logging for debugging and evaluation

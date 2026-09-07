@@ -16,6 +16,7 @@ import { createAnthropicAdapter } from './providers/anthropic.js';
 import { createGoogleAdapter } from './providers/google.js';
 import { createPerplexityAdapter } from './providers/perplexity.js';
 import { createXAIAdapter } from './providers/xai.js';
+import { createDeepInfraAdapter } from './providers/deepinfra.js';
 import { createCustomAdapter } from './providers/custom.js';
 import { resolveConfig } from './config.js';
 import { GenerationStatsStore } from './utils/generation-stats.js';
@@ -25,6 +26,7 @@ import { createOpenAIBatchAdapter } from './providers/openai-batch.js';
 import { createAnthropicBatchAdapter } from './providers/anthropic-batch.js';
 import { createGoogleBatchAdapter } from './providers/google-batch.js';
 import { createXAIBatchAdapter } from './providers/xai-batch.js';
+import { createDeepInfraBatchAdapter } from './providers/deepinfra-batch.js';
 import { configureFsIO } from './utils/fs-io.js';
 import { setDefaultTimeout } from './utils/fetch-with-timeout.js';
 import { resolvePromptCache } from './cache.js';
@@ -195,6 +197,12 @@ export class AnyModel {
       this.registry.register('xai', createXAIAdapter(xaiKey));
     }
 
+    // DeepInfra — native adapter with OpenAI-compatible batch
+    const deepinfraKey = config.deepinfra?.apiKey || process.env.DEEPINFRA_API_KEY;
+    if (deepinfraKey) {
+      this.registry.register('deepinfra', createDeepInfraAdapter(deepinfraKey));
+    }
+
     // Built-in OpenAI-compatible providers
     const builtinProviders: Array<{
       name: string;
@@ -253,6 +261,11 @@ export class AnyModel {
     const xaiKey = config.xai?.apiKey || process.env.XAI_API_KEY;
     if (xaiKey) {
       this.batchManager.registerBatchAdapter('xai', createXAIBatchAdapter(xaiKey));
+    }
+
+    const deepinfraKey = config.deepinfra?.apiKey || process.env.DEEPINFRA_API_KEY;
+    if (deepinfraKey) {
+      this.batchManager.registerBatchAdapter('deepinfra', createDeepInfraBatchAdapter(deepinfraKey));
     }
   }
 

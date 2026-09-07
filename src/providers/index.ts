@@ -5,3 +5,4 @@ export { createAnthropicAdapter } from './anthropic.js';
 export { createGoogleAdapter } from './google.js';
 export { createPerplexityAdapter } from './perplexity.js';
 export { createXAIAdapter } from './xai.js';
+export { createDeepInfraAdapter } from './deepinfra.js';

@@ -360,6 +360,7 @@ export interface AnyModelConfig {
   together?: ProviderConfig;
   fireworks?: ProviderConfig;
   perplexity?: ProviderConfig;
+  deepinfra?: ProviderConfig;
   ollama?: ProviderConfig & { baseURL?: string };
   custom?: Record<string, CustomProviderConfig>;
   aliases?: Record<string, string>;
