@@ -188,30 +188,51 @@ ${entries.join(',\n')},
 };
 
 /**
- * Look up pricing for a model. Tries exact match first,
- * then falls back to prefix matching for versioned models.
- * Handles dot/dash normalization: Anthropic API uses dashes (claude-opus-4-7)
- * while OpenRouter uses dots (claude-opus-4.7).
+ * Look up pricing for a model.
+ *
+ * Resolution is exact first, then prefix matching decided by key length:
+ *   1. The id as given, then its dot/dash-normalized form — the Anthropic API
+ *      uses dashes (claude-opus-4-7) where OpenRouter uses dots (claude-opus-4.7).
+ *   2. The longest known id that the query extends, so a dated or versioned id
+ *      ("openai/gpt-4o-2024-08-06") falls back to its base ("openai/gpt-4o").
+ *   3. Failing that, the shortest known id that extends the query.
+ *
+ * Every step is settled by key length and then alphabetically, never by the
+ * order of this table. The table is regenerated from a remote API whose
+ * ordering is arbitrary, so first-match-wins made a model's price liable to
+ * change on a regeneration alone: "openai/gpt-6" prefix-matches four entries
+ * spanning a 2x spread.
+ *
+ * ":batch" entries are a pricing mode rather than a model, so they only ever
+ * match a query that asks for one.
  */
 export function getModelPricing(modelId: string): PricingEntry | null {
-  // Exact match
-  if (MODEL_PRICING[modelId]) return MODEL_PRICING[modelId];
+  const exact = MODEL_PRICING[modelId];
+  if (exact) return exact;
 
-  // Normalize version suffix for dot/dash comparison
-  const normalized = modelId.replace(/(\\d+)\\.(\\d+)/, '$1-$2');
-  const dotted = modelId.replace(/(\\d+)-(\\d+)$/, '$1.$2');
+  const normalize = (id: string) => id.replace(/(\\d+)\\.(\\d+)/g, '$1-$2');
+  const query = normalize(modelId);
+  const wantsBatch = modelId.includes(':batch');
 
-  // Prefix match: "openai/gpt-4o-2024-08-06" → "openai/gpt-4o"
-  for (const [id, pricing] of Object.entries(MODEL_PRICING)) {
-    const idNorm = id.replace(/(\\d+)\\.(\\d+)/, '$1-$2');
-    if (normalized.startsWith(idNorm) || idNorm.startsWith(normalized)) {
-      return pricing;
-    }
-    if (dotted.startsWith(id) || id.startsWith(dotted)) {
-      return pricing;
-    }
+  const queryExtends: string[] = [];
+  const extendsQuery: string[] = [];
+
+  for (const id of Object.keys(MODEL_PRICING)) {
+    if (id.includes(':batch') !== wantsBatch) continue;
+    const key = normalize(id);
+    if (key === query) return MODEL_PRICING[id];
+    if (query.startsWith(key)) queryExtends.push(key);
+    else if (key.startsWith(query)) extendsQuery.push(key);
   }
 
+  const byLength = (a: string, b: string) => a.length - b.length || a.localeCompare(b);
+  const match = queryExtends.sort(byLength).pop() ?? extendsQuery.sort(byLength).shift();
+  if (!match) return null;
+
+  // Keys were normalized for comparison; recover the entry they came from.
+  for (const [id, pricing] of Object.entries(MODEL_PRICING)) {
+    if (normalize(id) === match) return pricing;
+  }
   return null;
 }
 

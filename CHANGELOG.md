@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - `tests/batch-cost.test.ts` derives its expected cost from `getModelPricing()` instead of hardcoded per-token rates, which broke the test on every pricing regeneration.
+- **`getModelPricing()` no longer resolves by table order.** Prefix matching returned the first key where either string prefixed the other, and the table is regenerated from a remote API whose ordering is arbitrary — so a model's price could change on a regeneration alone, with no code change and nothing failing. `openai/gpt-6` prefix-matched four entries spanning a 2x rate spread. Resolution is now settled by key length and then alphabetically: exact id first, then the longest known id the query extends (dated and versioned ids still fall back to their base), then the shortest id extending the query. Across 1278 probes over five table orderings, 261 results varied under the old rule and none under the new one; no real model id lost pricing or changed rate.
+- `:batch` entries are a pricing mode, not a model, and are no longer returned for a query that doesn't ask for one.
 
 ## [0.10.0] - 2026-08-06
 
