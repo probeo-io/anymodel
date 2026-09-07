@@ -18,7 +18,7 @@ import type { PricingEntry, PricingTier } from './pricing-overrides.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_PATH = join(__dirname, '..', 'src', 'generated', 'pricing.ts');
-const OVERRIDES_PATH = join(__dirname, 'pricing-overrides.json');
+const PRICES_PATH = join(__dirname, '..', 'prices.json');
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/models';
 const DEEPINFRA_API = 'https://api.deepinfra.com/v1/openai/models';
@@ -417,7 +417,7 @@ async function crossCheckRates(pricing: Map<string, PricingEntry>): Promise<void
     if (!theirs.has(key)) theirs.set(key, [input, output]);
   }
 
-  const disagreements: string[] = [];
+  const suggestions: Array<{ id: string; theirs: [number, number]; line: string }> = [];
   let matched = 0;
 
   for (const [id, entry] of pricing) {
@@ -426,16 +426,23 @@ async function crossCheckRates(pricing: Map<string, PricingEntry>): Promise<void
     if (!other) continue;
     matched++;
     if (Math.abs(other[0] - entry.prompt) < 1e-12 && Math.abs(other[1] - entry.completion) < 1e-12) continue;
-    disagreements.push(
-      `  ! ${id.padEnd(38)} ours ${(entry.prompt * 1e6).toFixed(3)}/${(entry.completion * 1e6).toFixed(3)}`
-      + `  litellm ${(other[0] * 1e6).toFixed(3)}/${(other[1] * 1e6).toFixed(3)}  per 1M in/out`,
-    );
+    suggestions.push({
+      id,
+      theirs: other,
+      line: `  ! ${id.padEnd(38)} ours ${(entry.prompt * 1e6).toFixed(3)}/${(entry.completion * 1e6).toFixed(3)}`
+        + `  litellm ${(other[0] * 1e6).toFixed(3)}/${(other[1] * 1e6).toFixed(3)}  per 1M in/out`,
+    });
   }
 
-  console.log(`  Compared ${matched} models, ${matched - disagreements.length} agree, ${disagreements.length} differ`);
-  for (const line of disagreements) console.log(line);
-  if (disagreements.length > 0) {
-    console.log('  Base rates only. Check the vendor pricing page before trusting a differing figure.');
+  console.log(`  Compared ${matched} models, ${matched - suggestions.length} agree, ${suggestions.length} differ`);
+  for (const { line } of suggestions) console.log(line);
+
+  if (suggestions.length > 0) {
+    console.log('\n  Check the vendor pricing page, then paste the right figure into prices.json:\n');
+    for (const { id, theirs } of suggestions) {
+      console.log(`    "${id}": { "in": ${theirs[0] * 1e6}, "out": ${theirs[1] * 1e6} },`);
+    }
+    console.log('');
   }
 }
 
@@ -444,27 +451,23 @@ async function crossCheckRates(pricing: Map<string, PricingEntry>): Promise<void
  * these rates feed cost accounting, and a silently ignored entry would price
  * requests wrong while looking like it was working.
  */
+/**
+ * Layer prices.json over the fetched rates. A malformed file is fatal: these
+ * feed cost accounting, and a silently ignored entry would price requests wrong
+ * while looking like it was working.
+ */
 function applyManualOverrides(pricing: Map<string, PricingEntry>): void {
-  if (!existsSync(OVERRIDES_PATH)) {
-    console.log('No pricing-overrides.json — using fetched rates as-is');
-    return;
-  }
+  if (!existsSync(PRICES_PATH)) return;
 
-  const overrides = parseOverrides(JSON.parse(readFileSync(OVERRIDES_PATH, 'utf-8')));
-  if (overrides.size === 0) {
-    console.log('Applying manual overrides... none defined');
-    return;
-  }
+  const overrides = parseOverrides(JSON.parse(readFileSync(PRICES_PATH, 'utf-8')));
+  if (overrides.size === 0) return;
 
   const report = applyOverrides(pricing, overrides);
-  console.log(`Applying manual overrides... ${overrides.size} entr${overrides.size === 1 ? 'y' : 'ies'}`);
+  console.log(`Applying prices.json... ${overrides.size} entr${overrides.size === 1 ? 'y' : 'ies'}`);
   if (report.changed.length) console.log(`  Replaced fetched rates: ${report.changed.join(', ')}`);
   if (report.added.length) console.log(`  Priced models absent upstream: ${report.added.join(', ')}`);
   if (report.redundant.length) {
-    console.log(`  Now identical to upstream, safe to delete: ${report.redundant.join(', ')}`);
-  }
-  if (report.stale.length) {
-    console.log(`  Undated or unconfirmed in over 180 days: ${report.stale.join(', ')}`);
+    console.log(`  Upstream now matches, safe to delete: ${report.redundant.join(', ')}`);
   }
 }
 

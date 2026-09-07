@@ -1,0 +1,5 @@
+{
+  "//": "Prices you have verified. These win over anything fetched.",
+  "//2": "Per million tokens, as vendors quote them. $2.50 per 1M is 2.5",
+  "//3": "Example:  \"openai/gpt-4o\": { \"in\": 2.5, \"out\": 10 }"
+}

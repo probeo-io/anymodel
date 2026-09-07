@@ -1,15 +1,14 @@
 /**
- * Hand-maintained rates layered over the fetched pricing sources.
+ * Reads prices.json — hand-verified rates that beat every fetched source.
  *
  * No vendor among OpenAI, Anthropic, Google, and xAI publishes machine-readable
  * pricing, so the generated table is only ever as good as the aggregators it is
- * built from. This is the escape hatch: a rate read off a vendor's own pricing
- * page, recorded by hand, that wins over whatever was fetched.
+ * built from. This is the escape hatch.
  *
- * Rates are written per million tokens, the way vendors quote them and the way
- * you will be reading them when you transcribe one. The generated table stores
- * per-token; converting here rather than at the keyboard is what stops a
- * misplaced zero from becoming a 10x billing error.
+ * The file is deliberately the smallest thing that can express a price: a model
+ * id and two numbers, per million tokens, as vendors quote them. Everything
+ * else — per-token conversion, cache rates, long-context tiers, spotting
+ * entries upstream has caught up with — is handled here.
  */
 
 export interface PricingTier {
@@ -29,24 +28,21 @@ export interface PricingEntry {
 }
 
 export interface OverrideTier {
-  minPromptTokens: number;
-  inputPerMillion: number;
-  outputPerMillion: number;
-  cacheReadPerMillion?: number;
-  cacheWritePerMillion?: number;
+  /** Applies once the prompt reaches this many tokens. */
+  from: number;
+  in: number;
+  out: number;
+  cacheRead?: number;
+  cacheWrite?: number;
 }
 
+/** All rates per million tokens. Only `in` and `out` are required. */
 export interface OverrideEntry {
-  inputPerMillion: number;
-  outputPerMillion: number;
-  cacheReadPerMillion?: number;
-  cacheWritePerMillion?: number;
+  in: number;
+  out: number;
+  cacheRead?: number;
+  cacheWrite?: number;
   tiers?: OverrideTier[];
-  /** Where the rate was read from — a vendor pricing page, ideally. */
-  source?: string;
-  /** ISO date the rate was last confirmed against that source. */
-  checked?: string;
-  note?: string;
 }
 
 const PER_MILLION = 1_000_000;
@@ -57,9 +53,6 @@ const PER_MILLION = 1_000_000;
  */
 const IMPLAUSIBLY_SMALL = 0.001;
 
-/** Overrides are transcribed by hand and go stale silently; say so. */
-const STALE_AFTER_DAYS = 180;
-
 function requireRate(value: unknown, model: string, field: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
     throw new Error(`${model}: '${field}' must be a non-negative number, got ${JSON.stringify(value)}`);
@@ -67,7 +60,7 @@ function requireRate(value: unknown, model: string, field: string): number {
   if (value > 0 && value < IMPLAUSIBLY_SMALL) {
     throw new Error(
       `${model}: '${field}' is ${value}, which looks like a per-token rate. `
-      + 'Overrides are written per million tokens — $3.50 per 1M is 3.5, not 0.0000035.',
+      + 'Prices are per million tokens — $3.50 per 1M is 3.5, not 0.0000035.',
     );
   }
   return value;
@@ -79,78 +72,76 @@ function optionalRate(value: unknown, model: string, field: string): number | un
 
 function parseTier(raw: any, model: string, index: number): OverrideTier {
   const where = `${model} tiers[${index}]`;
-  const min = raw?.minPromptTokens;
-  if (typeof min !== 'number' || !Number.isInteger(min) || min <= 0) {
-    throw new Error(`${where}: 'minPromptTokens' must be a positive integer, got ${JSON.stringify(min)}`);
+  if (typeof raw?.from !== 'number' || !Number.isInteger(raw.from) || raw.from <= 0) {
+    throw new Error(`${where}: 'from' must be a positive token count, got ${JSON.stringify(raw?.from)}`);
   }
   return {
-    minPromptTokens: min,
-    inputPerMillion: requireRate(raw.inputPerMillion, where, 'inputPerMillion'),
-    outputPerMillion: requireRate(raw.outputPerMillion, where, 'outputPerMillion'),
-    cacheReadPerMillion: optionalRate(raw.cacheReadPerMillion, where, 'cacheReadPerMillion'),
-    cacheWritePerMillion: optionalRate(raw.cacheWritePerMillion, where, 'cacheWritePerMillion'),
+    from: raw.from,
+    in: requireRate(raw.in, where, 'in'),
+    out: requireRate(raw.out, where, 'out'),
+    cacheRead: optionalRate(raw.cacheRead, where, 'cacheRead'),
+    cacheWrite: optionalRate(raw.cacheWrite, where, 'cacheWrite'),
   };
 }
 
 /**
- * Validate the override file. Every problem throws and names the model — this
- * is hand-entered data feeding cost accounting, so a malformed entry must stop
- * the build rather than quietly price something wrong.
+ * Validate the price file. Every problem throws and names the model — this is
+ * hand-entered data feeding cost accounting, so a malformed entry must stop the
+ * build rather than quietly price something wrong.
+ *
+ * Keys beginning with "//" or "$" are notes and are ignored, since JSON has no
+ * comments.
  */
 export function parseOverrides(raw: unknown): Map<string, OverrideEntry> {
-  const models = (raw as any)?.models;
-  if (models === undefined) return new Map();
-  if (typeof models !== 'object' || models === null || Array.isArray(models)) {
-    throw new Error("Override file: 'models' must be an object keyed by model id");
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Price file must be a JSON object of "provider/model": { "in": n, "out": n }');
   }
 
   const parsed = new Map<string, OverrideEntry>();
 
-  for (const [id, value] of Object.entries(models as Record<string, any>)) {
+  for (const [id, value] of Object.entries(raw as Record<string, any>)) {
+    if (id.startsWith('//') || id.startsWith('$')) continue;
     if (!id.includes('/')) {
       throw new Error(`${id}: model ids are 'provider/model', matching the keys in the generated table`);
     }
 
     const tiers = (value?.tiers ?? []).map((tier: unknown, i: number) => parseTier(tier, id, i));
     for (let i = 1; i < tiers.length; i++) {
-      if (tiers[i].minPromptTokens <= tiers[i - 1].minPromptTokens) {
-        throw new Error(`${id}: tiers must ascend by minPromptTokens`);
+      if (tiers[i].from <= tiers[i - 1].from) {
+        throw new Error(`${id}: tiers must ascend by 'from'`);
       }
     }
 
     parsed.set(id, {
-      inputPerMillion: requireRate(value?.inputPerMillion, id, 'inputPerMillion'),
-      outputPerMillion: requireRate(value?.outputPerMillion, id, 'outputPerMillion'),
-      cacheReadPerMillion: optionalRate(value?.cacheReadPerMillion, id, 'cacheReadPerMillion'),
-      cacheWritePerMillion: optionalRate(value?.cacheWritePerMillion, id, 'cacheWritePerMillion'),
+      in: requireRate(value?.in, id, 'in'),
+      out: requireRate(value?.out, id, 'out'),
+      cacheRead: optionalRate(value?.cacheRead, id, 'cacheRead'),
+      cacheWrite: optionalRate(value?.cacheWrite, id, 'cacheWrite'),
       ...(tiers.length > 0 ? { tiers } : {}),
-      source: value?.source,
-      checked: value?.checked,
-      note: value?.note,
     });
   }
 
   return parsed;
 }
 
-/** Convert a hand-written override into the per-token shape the table stores. */
+/** Convert a hand-written price into the per-token shape the table stores. */
 export function toPricingEntry(override: OverrideEntry): PricingEntry {
   const entry: PricingEntry = {
-    prompt: override.inputPerMillion / PER_MILLION,
-    completion: override.outputPerMillion / PER_MILLION,
+    prompt: override.in / PER_MILLION,
+    completion: override.out / PER_MILLION,
   };
-  if (override.cacheReadPerMillion !== undefined) entry.cacheRead = override.cacheReadPerMillion / PER_MILLION;
-  if (override.cacheWritePerMillion !== undefined) entry.cacheWrite = override.cacheWritePerMillion / PER_MILLION;
+  if (override.cacheRead !== undefined) entry.cacheRead = override.cacheRead / PER_MILLION;
+  if (override.cacheWrite !== undefined) entry.cacheWrite = override.cacheWrite / PER_MILLION;
 
   if (override.tiers?.length) {
     entry.tiers = override.tiers.map(tier => {
       const converted: PricingTier = {
-        minPromptTokens: tier.minPromptTokens,
-        prompt: tier.inputPerMillion / PER_MILLION,
-        completion: tier.outputPerMillion / PER_MILLION,
+        minPromptTokens: tier.from,
+        prompt: tier.in / PER_MILLION,
+        completion: tier.out / PER_MILLION,
       };
-      if (tier.cacheReadPerMillion !== undefined) converted.cacheRead = tier.cacheReadPerMillion / PER_MILLION;
-      if (tier.cacheWritePerMillion !== undefined) converted.cacheWrite = tier.cacheWritePerMillion / PER_MILLION;
+      if (tier.cacheRead !== undefined) converted.cacheRead = tier.cacheRead / PER_MILLION;
+      if (tier.cacheWrite !== undefined) converted.cacheWrite = tier.cacheWrite / PER_MILLION;
       return converted;
     });
   }
@@ -163,10 +154,8 @@ export interface OverrideReport {
   changed: string[];
   /** Priced a model the fetched sources don't list at all. */
   added: string[];
-  /** Now identical to what upstream returns — the override can be retired. */
+  /** Now identical to what upstream returns — the entry can be deleted. */
   redundant: string[];
-  /** Confirmed longer ago than STALE_AFTER_DAYS, or never dated. */
-  stale: string[];
 }
 
 /**
@@ -199,24 +188,16 @@ function sameRates(a: PricingEntry, b: PricingEntry): boolean {
   });
 }
 
-function isStale(checked: string | undefined, now: Date): boolean {
-  if (!checked) return true;
-  const when = Date.parse(checked);
-  if (Number.isNaN(when)) return true;
-  return (now.getTime() - when) / 86_400_000 > STALE_AFTER_DAYS;
-}
-
 /**
- * Apply overrides in place, reporting what each one did. Redundant and stale
- * entries are called out so the file stays honest — a hand-maintained list
- * whose entries silently duplicate upstream is worse than no list.
+ * Apply overrides in place, reporting what each one did. Redundant entries are
+ * called out so the file stays honest: once upstream reports the same rate, the
+ * hand-written one is dead weight that looks like it is doing something.
  */
 export function applyOverrides(
   pricing: Map<string, PricingEntry>,
   overrides: Map<string, OverrideEntry>,
-  now: Date = new Date(),
 ): OverrideReport {
-  const report: OverrideReport = { changed: [], added: [], redundant: [], stale: [] };
+  const report: OverrideReport = { changed: [], added: [], redundant: [] };
 
   for (const [id, override] of overrides) {
     const entry = toPricingEntry(override);
@@ -225,8 +206,6 @@ export function applyOverrides(
     if (!fetched) report.added.push(id);
     else if (sameRates(fetched, entry)) report.redundant.push(id);
     else report.changed.push(id);
-
-    if (isStale(override.checked, now)) report.stale.push(id);
 
     pricing.set(id, entry);
   }

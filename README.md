@@ -368,22 +368,17 @@ Pricing for 513 models is baked in at build time from OpenRouter and DeepInfra �
 
 Long-context tiers are applied automatically: models that charge more past a prompt-size threshold (OpenAI above 272k tokens, xAI above 200k) bill at the tier rate, not the entry rate.
 
-No vendor publishes machine-readable pricing, so rates for OpenAI, Anthropic, Google and xAI come from OpenRouter and are cross-checked against LiteLLM's independent table at build time, with any disagreement reported. To pin a rate you have verified yourself — or to price a model no aggregator lists — add it to `scripts/pricing-overrides.json`, written per million tokens as vendors quote them:
+No vendor publishes machine-readable pricing, so rates for OpenAI, Anthropic, Google and xAI come from OpenRouter, cross-checked at build time against LiteLLM's independent table. Any disagreement is reported, with the correction ready to paste.
+
+To pin a price you have verified yourself, or to price a model no aggregator lists, put it in `prices.json` at the project root — a model id and two numbers, per million tokens, exactly as vendors quote them:
 
 ```json
 {
-  "models": {
-    "openai/gpt-5.6-sol": {
-      "inputPerMillion": 4.0,
-      "outputPerMillion": 20.0,
-      "source": "https://openai.com/api/pricing",
-      "checked": "2026-09-07"
-    }
-  }
+  "openai/gpt-5.6-sol": { "in": 4, "out": 20 }
 }
 ```
 
-Overrides beat every fetched source. The generator reports any that have gone stale or become redundant.
+That is the whole format. Per-token conversion, cache rates, and long-context tiers are handled for you; `cacheRead`, `cacheWrite`, and `tiers` are there if you need them but most entries won't. These win over every fetched source, a typo'd rate fails the build rather than mispricing quietly, and once upstream reports the same number the generator tells you the entry is safe to delete.
 
 ```typescript
 // Per-request cost on GenerationStats
