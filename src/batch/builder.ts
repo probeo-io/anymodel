@@ -275,7 +275,7 @@ export class BatchBuilder {
           result.response.model || this.config.model,
           promptTokens,
           completionTokens,
-        ) * discount;
+        ) * discount + (result.response.usage?.tool_cost ?? 0);
 
         totalPromptTokens += promptTokens;
         totalCompletionTokens += completionTokens;

@@ -108,6 +108,7 @@ export class AnyModel {
             providerName,
             promptTokens: response.usage.prompt_tokens,
             completionTokens: response.usage.completion_tokens,
+            toolCost: response.usage.tool_cost,
             startTime,
             endTime,
             finishReason: response.choices[0]?.finish_reason || 'stop',

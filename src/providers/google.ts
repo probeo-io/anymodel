@@ -5,7 +5,6 @@ import type {
   ChatCompletionWithMeta,
   ChatCompletionChunk,
   AnyModelErrorMetadata,
-  FunctionTool,
   ModelInfo,
   Message,
   ResponseMeta,
@@ -14,6 +13,9 @@ import type {
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
+import { geminiCitations, geminiTools } from '../utils/web-search.js';
+import { geminiUsage } from '../utils/gemini-usage.js';
+import { withToolCost, webSearchCost } from '../pricing/tool-fees.js';
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -22,21 +24,19 @@ const SUPPORTED_PARAMS = new Set([
   'tools', 'tool_choice', 'response_format',
 ]);
 
-function isFunctionTool(tool: unknown): tool is FunctionTool {
-  return Boolean(tool && typeof tool === 'object' && (tool as FunctionTool).type === 'function');
-}
-
-// Fallback if API listing fails — kept current as of March 2026
+// Fallback if API listing fails: text models from the Gemini API's model list, 2026-10-07
 const FALLBACK_MODELS: ModelInfo[] = [
-  // Gemini 2.5
-  { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro', created: 0, description: 'Most capable Gemini model', context_length: 1048576, pricing: { prompt: '0.00000125', completion: '0.000005' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', created: 0, description: 'Fast and efficient', context_length: 1048576, pricing: { prompt: '0.00000015', completion: '0.0000006' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  // Gemini 2.0
-  { id: 'google/gemini-2.0-flash', name: 'Gemini 2.0 Flash', created: 0, description: 'Fast multimodal model', context_length: 1048576, pricing: { prompt: '0.0000001', completion: '0.0000004' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  { id: 'google/gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite', created: 0, description: 'Lightweight and fast', context_length: 1048576, pricing: { prompt: '0.00000005', completion: '0.0000002' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  // Gemini 1.5
-  { id: 'google/gemini-1.5-pro', name: 'Gemini 1.5 Pro', created: 0, description: 'Previous generation pro model', context_length: 2097152, pricing: { prompt: '0.00000125', completion: '0.000005' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 2097152, max_completion_tokens: 8192, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  { id: 'google/gemini-1.5-flash', name: 'Gemini 1.5 Flash', created: 0, description: 'Previous generation flash model', context_length: 1048576, pricing: { prompt: '0.000000075', completion: '0.0000003' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 8192, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash', created: 0, description: 'Gemini 3.8 Flash', context_length: 1048576, pricing: {prompt: '0.00000075', completion: '0.00000375'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'google/gemini-3.7-flash', name: 'Gemini 3.7 Flash', created: 0, description: 'Gemini 3.7 Flash', context_length: 1048576, pricing: {prompt: '0.00000075', completion: '0.00000375'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'google/gemini-3.6-flash', name: 'Gemini 3.6 Flash', created: 0, description: 'Gemini 3.6 Flash', context_length: 1048576, pricing: {prompt: '0.00000075', completion: '0.00000375'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'google/gemini-3.5-flash', name: 'Gemini 3.5 Flash', created: 0, description: 'Gemini 3.5 Flash', context_length: 1048576, pricing: {prompt: '0.0000015', completion: '0.000009'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'google/gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite', created: 0, description: 'Gemini 3.5 Flash Lite', context_length: 1048576, pricing: {prompt: '0.0000003', completion: '0.0000025'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'google/gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview', created: 0, description: 'Gemini 3.1 Pro Preview', context_length: 1048576, pricing: {prompt: '0.000002', completion: '0.000012'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'google/gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', created: 0, description: 'Gemini 3.1 Flash Lite', context_length: 1048576, pricing: {prompt: '0.00000025', completion: '0.0000015'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'google/gemini-3-flash-preview', name: 'Gemini 3 Flash Preview', created: 0, description: 'Gemini 3 Flash Preview', context_length: 1048576, pricing: {prompt: '0.0000005', completion: '0.000003'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro', created: 0, description: 'Gemini 2.5 Pro', context_length: 1048576, pricing: {prompt: '0.00000125', completion: '0.00001'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', created: 0, description: 'Gemini 2.5 Flash', context_length: 1048576, pricing: {prompt: '0.0000003', completion: '0.0000025'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'google/gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite', created: 0, description: 'Gemini 2.5 Flash-Lite', context_length: 1048576, pricing: {prompt: '0.0000001', completion: '0.0000004'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'], tokenizer: 'gemini' }, top_provider: { context_length: 1048576, max_completion_tokens: 65536, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
 ];
 
 export function createGoogleAdapter(apiKey: string): ProviderAdapter {
@@ -118,15 +118,9 @@ export function createGoogleAdapter(apiKey: string): ProviderAdapter {
 
     // Map tools
     if (request.tools && request.tools.length > 0) {
-      const functionTools = request.tools.filter(isFunctionTool);
-      body.tools = [{
-        functionDeclarations: functionTools.map(t => ({
-          name: t.function.name,
-          description: t.function.description || '',
-          parameters: t.function.parameters || {},
-        })),
-      }];
-      if (functionTools.length === 0) delete body.tools;
+      const tools = geminiTools(request.tools);
+      body.tools = tools;
+      if (tools.length === 0) delete body.tools;
 
       if (request.tool_choice) {
         if (request.tool_choice === 'auto') {
@@ -190,18 +184,18 @@ export function createGoogleAdapter(apiKey: string): ProviderAdapter {
       ? 'tool_calls' as const
       : mapFinishReason(candidate?.finishReason || 'STOP');
 
-    return {
+    const result: ChatCompletion = {
       id: generateId(),
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
       model: `google/${r.modelVersion || 'unknown'}`,
       choices: [{ index: 0, message, finish_reason: finishReason }],
-      usage: {
-        prompt_tokens: r.usageMetadata?.promptTokenCount || 0,
-        completion_tokens: r.usageMetadata?.candidatesTokenCount || 0,
-        total_tokens: r.usageMetadata?.totalTokenCount || 0,
-      },
+      usage: geminiUsage(r.usageMetadata),
     };
+    withToolCost(result.usage, webSearchCost('google', candidate?.groundingMetadata?.webSearchQueries?.length ?? 0));
+    const citations = geminiCitations(candidate);
+    if (citations.length > 0) (result as any).citations = citations;
+    return result;
   }
 
   const adapter: ProviderAdapter = {
@@ -258,11 +252,7 @@ export function createGoogleAdapter(apiKey: string): ProviderAdapter {
                 yield {
                   id, object: 'chat.completion.chunk', created, model: `google/${data.modelVersion || 'unknown'}`,
                   choices: [{ index: 0, delta: {}, finish_reason: mapFinishReason(candidate.finishReason) }],
-                  usage: data.usageMetadata ? {
-                    prompt_tokens: data.usageMetadata.promptTokenCount || 0,
-                    completion_tokens: data.usageMetadata.candidatesTokenCount || 0,
-                    total_tokens: data.usageMetadata.totalTokenCount || 0,
-                  } : undefined,
+                  usage: data.usageMetadata ? geminiUsage(data.usageMetadata) : undefined,
                 };
               }
             }

@@ -4,6 +4,7 @@ import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
 import { resolveMaxTokens } from '../utils/token-estimate.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
+import { isWebSearchTool } from '../utils/web-search.js';
 
 const XAI_API_BASE = 'https://api.x.ai/v1';
 
@@ -107,14 +108,15 @@ export function createXAIBatchAdapter(apiKey: string): BatchAdapter {
     if (req.cache?.key !== undefined) responses.prompt_cache_key = req.cache.key;
 
     if (req.tools && req.tools.length > 0) {
-      const functionTools = req.tools.filter(isFunctionTool);
-      responses.tools = functionTools.map(tool => ({
+      // Web search goes through as xAI's own Responses tool, as on the live adapter.
+      const tools = req.tools.flatMap((tool): Record<string, unknown>[] => isWebSearchTool(tool) ? [{ ...tool }] : isFunctionTool(tool) ? [{
         type: 'function',
         name: tool.function.name,
         description: tool.function.description,
         parameters: tool.function.parameters || { type: 'object', properties: {} },
-      }));
-      if (functionTools.length === 0) delete responses.tools;
+      }] : []);
+      responses.tools = tools;
+      if (tools.length === 0) delete responses.tools;
     }
 
     if (req.tool_choice !== undefined) responses.tool_choice = req.tool_choice;

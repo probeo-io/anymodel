@@ -1,6 +1,7 @@
 import type { BatchAdapter, NativeBatchStatus } from './adapter.js';
 import type { BatchRequestItem, BatchResultItem, ChatCompletion } from '../types.js';
 import { AnyModelError } from '../types.js';
+import { rejectWebSearch } from '../utils/web-search.js';
 import { generateId } from '../utils/id.js';
 import { resolveMaxTokens } from '../utils/token-estimate.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
@@ -59,6 +60,7 @@ export function createDeepInfraBatchAdapter(apiKey: string, baseURL = DEEPINFRA_
       if (req.top_p !== undefined) body.top_p = req.top_p;
       if (req.stop !== undefined) body.stop = req.stop;
       if (req.response_format !== undefined) body.response_format = req.response_format;
+      rejectWebSearch(req.tools, 'deepinfra');
       if (req.tools !== undefined) body.tools = req.tools;
       if (req.tool_choice !== undefined) body.tool_choice = req.tool_choice;
       // DeepInfra has no retention controls — only the cache partition key applies.

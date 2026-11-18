@@ -194,7 +194,7 @@ export class BatchManager {
       if (result.response) {
         usage.total_prompt_tokens += result.response.usage.prompt_tokens;
         usage.total_completion_tokens += result.response.usage.completion_tokens;
-        usage.estimated_cost += calculateProviderCost({ model: result.response.model || batch.model, usage: { promptTokens: result.response.usage.prompt_tokens, completionTokens: result.response.usage.completion_tokens }, serviceTier: batch.service_tier, batchMode: batch.batch_mode === 'native' ? 'native' : 'concurrent' }).estimatedCost;
+        usage.estimated_cost += calculateProviderCost({ model: result.response.model || batch.model, usage: { promptTokens: result.response.usage.prompt_tokens, completionTokens: result.response.usage.completion_tokens, toolCost: result.response.usage.tool_cost }, serviceTier: batch.service_tier, batchMode: batch.batch_mode === 'native' ? 'native' : 'concurrent' }).estimatedCost;
       }
     }
 

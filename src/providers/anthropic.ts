@@ -5,7 +5,6 @@ import type {
   ChatCompletionWithMeta,
   ChatCompletionChunk,
   AnyModelErrorMetadata,
-  FunctionTool,
   ModelInfo,
   Message,
   ResponseMeta,
@@ -15,33 +14,37 @@ import { AnyModelError } from '../types.js';
 import { toAnthropicMessages } from './anthropic-messages.js';
 import { generateId } from '../utils/id.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
+import { anthropicCitations, anthropicTools } from '../utils/web-search.js';
+import { withToolCost, webSearchCost } from '../pricing/tool-fees.js';
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_MAX_TOKENS = 4096;
+// A web search turn can pause (stop_reason 'pause_turn'); it is resumed at most this many times.
+const MAX_PAUSE_TURNS = 5;
 
 const SUPPORTED_PARAMS = new Set([
   'temperature', 'max_tokens', 'top_p', 'top_k', 'stop', 'stream',
   'tools', 'tool_choice', 'response_format', 'cache',
 ]);
 
-function isFunctionTool(tool: unknown): tool is FunctionTool {
-  return Boolean(tool && typeof tool === 'object' && (tool as FunctionTool).type === 'function');
-}
-
 // Fallback if API listing fails — sourced from docs.anthropic.com/en/docs/about-claude/models/overview
 const FALLBACK_MODELS: ModelInfo[] = [
-  // Current models
-  { id: 'anthropic/claude-opus-4-7', name: 'Claude Opus 4.7', created: 0, description: 'Most capable model', context_length: 1000000, pricing: { prompt: '0.000005', completion: '0.000025' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 128000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  { id: 'anthropic/claude-sonnet-4-6', name: 'Claude Sonnet 4.6', created: 0, description: 'Best balance of speed and capability', context_length: 1000000, pricing: { prompt: '0.000003', completion: '0.000015' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 64000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  { id: 'anthropic/claude-haiku-4-5', name: 'Claude Haiku 4.5', created: 0, description: 'Fast and compact', context_length: 200000, pricing: { prompt: '0.000001', completion: '0.000005' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 64000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  // Legacy
-  { id: 'anthropic/claude-opus-4-6', name: 'Claude Opus 4.6', created: 0, description: 'Legacy — extended + adaptive thinking', context_length: 1000000, pricing: { prompt: '0.000005', completion: '0.000025' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 128000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  { id: 'anthropic/claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', created: 0, description: 'Legacy balanced model', context_length: 200000, pricing: { prompt: '0.000003', completion: '0.000015' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 64000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  { id: 'anthropic/claude-opus-4-5-20251101', name: 'Claude Opus 4.5', created: 0, description: 'Legacy', context_length: 200000, pricing: { prompt: '0.000005', completion: '0.000025' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 64000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  { id: 'anthropic/claude-opus-4-1-20250805', name: 'Claude Opus 4.1', created: 0, description: 'Legacy frontier model', context_length: 200000, pricing: { prompt: '0.000015', completion: '0.000075' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 32000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  { id: 'anthropic/claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', created: 0, description: 'Legacy', context_length: 200000, pricing: { prompt: '0.000003', completion: '0.000015' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 8192, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
-  { id: 'anthropic/claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', created: 0, description: 'Legacy fast model', context_length: 200000, pricing: { prompt: '0.0000008', completion: '0.000004' }, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 8192, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  // From the Models API and the pricing page, 2026-10-07.
+  { id: 'anthropic/claude-haiku-5-5', name: 'Claude Haiku 5.5', created: 0, description: 'Claude Haiku 5.5', context_length: 1000000, pricing: {prompt: '0.0000001', completion: '0.0000005'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 128000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-sonnet-5-5', name: 'Claude Sonnet 5.5', created: 0, description: 'Claude Sonnet 5.5', context_length: 1000000, pricing: {prompt: '0.000002', completion: '0.00001'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 128000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5', created: 0, description: 'Claude Opus 5.5', context_length: 1000000, pricing: {prompt: '0.000004', completion: '0.00002'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 128000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-fable-5-1', name: 'Claude Fable 5.1', created: 0, description: 'Claude Fable 5.1', context_length: 1000000, pricing: {prompt: '0.00001', completion: '0.00005'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 128000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-opus-5', name: 'Claude Opus 5', created: 0, description: 'Claude Opus 5', context_length: 1000000, pricing: {prompt: '0.000005', completion: '0.000025'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 128000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-sonnet-5', name: 'Claude Sonnet 5', created: 0, description: 'Claude Sonnet 5', context_length: 1000000, pricing: {prompt: '0.000002', completion: '0.00001'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 128000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-fable-5', name: 'Claude Fable 5', created: 0, description: 'Claude Fable 5', context_length: 1000000, pricing: {prompt: '0.00001', completion: '0.00005'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 128000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-opus-4-8', name: 'Claude Opus 4.8', created: 0, description: 'Claude Opus 4.8', context_length: 1000000, pricing: {prompt: '0.000005', completion: '0.000025'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 128000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-opus-4-7', name: 'Claude Opus 4.7', created: 0, description: 'Claude Opus 4.7', context_length: 1000000, pricing: {prompt: '0.000005', completion: '0.000025'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 128000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-sonnet-4-6', name: 'Claude Sonnet 4.6', created: 0, description: 'Claude Sonnet 4.6', context_length: 1000000, pricing: {prompt: '0.000003', completion: '0.000015'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 128000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-opus-4-6', name: 'Claude Opus 4.6', created: 0, description: 'Claude Opus 4.6', context_length: 1000000, pricing: {prompt: '0.000005', completion: '0.000025'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 128000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-opus-4-5-20251101', name: 'Claude Opus 4.5', created: 0, description: 'Claude Opus 4.5', context_length: 200000, pricing: {prompt: '0.000005', completion: '0.000025'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 64000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', created: 0, description: 'Claude Haiku 4.5', context_length: 200000, pricing: {prompt: '0.000001', completion: '0.000005'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 200000, max_completion_tokens: 64000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
+  { id: 'anthropic/claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', created: 0, description: 'Claude Sonnet 4.5', context_length: 1000000, pricing: {prompt: '0.000003', completion: '0.000015'}, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'], tokenizer: 'claude' }, top_provider: { context_length: 1000000, max_completion_tokens: 64000, is_moderated: false }, supported_parameters: Array.from(SUPPORTED_PARAMS) },
 ];
 
 export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
@@ -141,13 +144,9 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
 
     // Map tools
     if (request.tools && request.tools.length > 0) {
-      const functionTools = request.tools.filter(isFunctionTool);
-      body.tools = functionTools.map(t => ({
-        name: t.function.name,
-        description: t.function.description || '',
-        input_schema: t.function.parameters || { type: 'object', properties: {} },
-      }));
-      if (functionTools.length === 0) delete body.tools;
+      const tools = anthropicTools(request.model, request.tools);
+      body.tools = tools;
+      if (tools.length === 0) delete body.tools;
 
       if (request.tool_choice) {
         if (request.tool_choice === 'auto') {
@@ -216,7 +215,7 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
       message.tool_calls = toolCalls;
     }
 
-    return {
+    const result: ChatCompletion = {
       id: generateId(),
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
@@ -231,6 +230,37 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
         completion_tokens: r.usage?.output_tokens || 0,
         total_tokens: (r.usage?.input_tokens || 0) + (r.usage?.output_tokens || 0),
       },
+    };
+    // The pages a web search answer cited, as xAI and Perplexity already return them.
+    const citations = anthropicCitations(r.content || []);
+    if (citations.length > 0) (result as any).citations = citations;
+    if (r.usage?.server_tool_use) (result as any).server_tool_use = r.usage.server_tool_use;
+    withToolCost(result.usage, webSearchCost('anthropic', Number(r.usage?.server_tool_use?.web_search_requests ?? 0)));
+    return result;
+  }
+
+  /* A server-side web search can stop with 'pause_turn'. Sending the paused
+     content back as the assistant turn lets Claude carry on; the pieces are
+     joined so the caller gets one finished answer. */
+  async function postMessages(body: Record<string, unknown>): Promise<{ res: Response; json: any }> {
+    let res = await makeRequest('/messages', body);
+    let json: any = await res.json();
+    for (let i = 0; json?.stop_reason === 'pause_turn' && i < MAX_PAUSE_TURNS; i++) {
+      const resumed = { ...body, messages: [...(body.messages as unknown[]), { role: 'assistant', content: json.content }] };
+      res = await makeRequest('/messages', resumed);
+      json = joinPausedTurn(json, await res.json());
+    }
+    return { res, json };
+  }
+
+  function joinPausedTurn(paused: any, next: any): any {
+    const add = (k: string) => (paused.usage?.[k] || 0) + (next.usage?.[k] || 0);
+    const searches = (paused.usage?.server_tool_use?.web_search_requests || 0) + (next.usage?.server_tool_use?.web_search_requests || 0);
+    return {
+      ...next,
+      content: [...(paused.content || []), ...(next.content || [])],
+      usage: { ...next.usage, input_tokens: add('input_tokens'), output_tokens: add('output_tokens'),
+        ...(searches ? { server_tool_use: { web_search_requests: searches } } : {}) },
     };
   }
 
@@ -248,6 +278,9 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
       const created = Math.floor(Date.now() / 1000);
       let model = '';
       let usage: any = null;
+      // Block types by index: only the caller's own tool_use blocks stream out as
+      // tool calls, not a web search's server_tool_use input.
+      const blockTypes = new Map<number, string>();
 
       try {
         while (true) {
@@ -279,7 +312,7 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
                     id, object: 'chat.completion.chunk', created, model,
                     choices: [{ index: 0, delta: { content: data.delta.text }, finish_reason: null }],
                   };
-                } else if (data.delta?.type === 'input_json_delta') {
+                } else if (data.delta?.type === 'input_json_delta' && blockTypes.get(data.index) === 'tool_use') {
                   // Tool use streaming — emit as tool_calls delta
                   yield {
                     id, object: 'chat.completion.chunk', created, model,
@@ -297,6 +330,7 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
                   };
                 }
               } else if (data.type === 'content_block_start') {
+                blockTypes.set(data.index, data.content_block?.type);
                 if (data.content_block?.type === 'tool_use') {
                   yield {
                     id, object: 'chat.completion.chunk', created, model,
@@ -373,7 +407,8 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
             name: m.display_name || m.id,
             created: m.created_at ? new Date(m.created_at).getTime() / 1000 : 0,
             description: m.display_name || '',
-            context_length: 200000,
+            // The Models API reports each model's limits; the old fixed 200000/16384 predates that.
+            context_length: m.max_input_tokens ?? 200000,
             pricing: { prompt: '0', completion: '0' },
             architecture: {
               modality: 'text+image->text',
@@ -382,8 +417,8 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
               tokenizer: 'claude',
             },
             top_provider: {
-              context_length: 200000,
-              max_completion_tokens: 16384,
+              context_length: m.max_input_tokens ?? 200000,
+              max_completion_tokens: m.max_tokens ?? 16384,
               is_moderated: false,
             },
             supported_parameters: Array.from(SUPPORTED_PARAMS),
@@ -402,18 +437,13 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
     },
 
     async sendRequest(request: ChatCompletionRequest): Promise<ChatCompletion> {
-      const body = translateRequest(request);
-      const res = await makeRequest('/messages', body);
-      const json = await res.json();
+      const { json } = await postMessages(translateRequest(request));
       return translateResponse(json);
     },
 
     async sendRequestWithMeta(request: ChatCompletionRequest): Promise<ChatCompletionWithMeta> {
-      const body = translateRequest(request);
-      const res = await makeRequest('/messages', body);
-      const meta = extractResponseMeta(res);
-      const json = await res.json();
-      return { completion: translateResponse(json), meta };
+      const { res, json } = await postMessages(translateRequest(request));
+      return { completion: translateResponse(json), meta: extractResponseMeta(res) };
     },
 
     async sendStreamingRequest(request: ChatCompletionRequest): Promise<AsyncIterable<ChatCompletionChunk>> {

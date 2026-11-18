@@ -9,6 +9,7 @@ import type {
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
+import { perplexitySearch } from '../utils/web-search.js';
 
 const PERPLEXITY_API_BASE = 'https://api.perplexity.ai';
 
@@ -91,7 +92,9 @@ export function createPerplexityAdapter(apiKey: string): ProviderAdapter {
     if (request.stop !== undefined) body.stop = request.stop;
     if (request.stream !== undefined) body.stream = request.stream;
     if (request.response_format !== undefined) body.response_format = request.response_format;
-    if (request.tools !== undefined) body.tools = request.tools;
+    const search = perplexitySearch(request.tools);
+    if (search.tools !== undefined) body.tools = search.tools;
+    if (search.search_domain_filter) body.search_domain_filter = search.search_domain_filter;
     if (request.tool_choice !== undefined) body.tool_choice = request.tool_choice;
 
     return body;
@@ -114,6 +117,9 @@ export function createPerplexityAdapter(apiKey: string): ProviderAdapter {
         choices: r.choices,
         usage: r.usage,
       };
+
+      // Perplexity reports its per-request search fee itself.
+      if (result.usage && Number(r.usage?.cost?.request_cost) > 0) result.usage.tool_cost = Number(r.usage.cost.request_cost);
 
       // Preserve citations in metadata if present
       if (r.citations && result.choices?.[0]?.message) {

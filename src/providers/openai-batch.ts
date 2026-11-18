@@ -9,7 +9,7 @@ const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
 // Models that use max_completion_tokens instead of max_tokens
 function usesMaxCompletionTokens(model: string): boolean {
-  return /^(o[1-9]|gpt-5|gpt-4o)/.test(model);
+  return /^(o[1-9]|gpt-6|gpt-5|gpt-4o)/.test(model);
 }
 
 export function createOpenAIBatchAdapter(apiKey: string): BatchAdapter {

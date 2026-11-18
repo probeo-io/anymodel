@@ -11,6 +11,7 @@ import type {
 } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
+import { rejectWebSearch } from '../utils/web-search.js';
 
 const DEEPINFRA_API_BASE = 'https://api.deepinfra.com/v1/openai';
 
@@ -142,6 +143,7 @@ export function createDeepInfraAdapter(apiKey: string, baseURL = DEEPINFRA_API_B
     if (request.logprobs !== undefined) body.logprobs = request.logprobs;
     if (request.top_logprobs !== undefined) body.top_logprobs = request.top_logprobs;
     if (request.response_format !== undefined) body.response_format = request.response_format;
+    rejectWebSearch(request.tools, 'deepinfra');
     if (request.tools !== undefined) body.tools = request.tools;
     if (request.tool_choice !== undefined) body.tool_choice = request.tool_choice;
     if (request.user !== undefined) body.user = request.user;

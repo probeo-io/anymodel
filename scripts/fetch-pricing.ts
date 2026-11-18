@@ -365,12 +365,14 @@ export function calculateCost(
     + (completionTokens * rates.completion);
 }
 
-export function calculateProviderCost(input: { model: string; usage: { promptTokens: number; completionTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }; serviceTier?: 'auto' | 'flex'; batchMode?: 'native' | 'concurrent' }): { estimatedCost: number; multiplier: number; pricing: PricingEntry | null } {
+export function calculateProviderCost(input: { model: string; usage: { promptTokens: number; completionTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; toolCost?: number }; serviceTier?: 'auto' | 'flex'; batchMode?: 'native' | 'concurrent' }): { estimatedCost: number; multiplier: number; pricing: PricingEntry | null } {
   const pricing = getModelPricing(input.model);
   const provider = input.model.split('/')[0];
   const mode: PricingMode = input.batchMode === 'native' ? 'native_batch' : input.serviceTier === 'flex' ? 'flex' : 'standard';
   const multiplier = providerPricingMultiplier(provider, mode);
-  return { estimatedCost: calculateCost(input.model, input.usage.promptTokens, input.usage.completionTokens, input.usage.cacheReadTokens, input.usage.cacheWriteTokens) * multiplier, multiplier, pricing };
+  // Tool fees (web searches, request fees) are per call and not discounted by batch or flex.
+  const tokens = calculateCost(input.model, input.usage.promptTokens, input.usage.completionTokens, input.usage.cacheReadTokens, input.usage.cacheWriteTokens) * multiplier;
+  return { estimatedCost: tokens + (input.usage.toolCost ?? 0), multiplier, pricing };
 }
 `;
 }
