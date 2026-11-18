@@ -1,6 +1,7 @@
 import type { BatchAdapter, NativeBatchStatus } from './adapter.js';
 import type { BatchRequestItem, BatchResultItem, ChatCompletion, FunctionTool, Message, ToolCall } from '../types.js';
 import { AnyModelError } from '../types.js';
+import { toAnthropicMessages } from './anthropic-messages.js';
 import { generateId } from '../utils/id.js';
 import { resolveMaxTokens } from '../utils/token-estimate.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
@@ -59,12 +60,7 @@ export function createAnthropicBatchAdapter(apiKey: string): BatchAdapter {
     }
 
     // Map messages
-    params.messages = nonSystemMessages.map(m => ({
-      role: m.role === 'tool' ? 'user' : m.role,
-      content: m.tool_call_id
-        ? [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: typeof m.content === 'string' ? m.content : '' }]
-        : m.content,
-    }));
+    params.messages = toAnthropicMessages(nonSystemMessages);
 
     if (req.temperature !== undefined) params.temperature = req.temperature;
     if (req.top_p !== undefined) params.top_p = req.top_p;

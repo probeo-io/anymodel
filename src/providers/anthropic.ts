@@ -12,6 +12,7 @@ import type {
   ToolCall,
 } from '../types.js';
 import { AnyModelError } from '../types.js';
+import { toAnthropicMessages } from './anthropic-messages.js';
 import { generateId } from '../utils/id.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 
@@ -123,12 +124,7 @@ export function createAnthropicAdapter(apiKey: string): ProviderAdapter {
     }
 
     // Map messages
-    body.messages = nonSystemMessages.map(m => ({
-      role: m.role === 'tool' ? 'user' : m.role,
-      content: m.tool_call_id
-        ? [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: typeof m.content === 'string' ? m.content : '' }]
-        : m.content,
-    }));
+    body.messages = toAnthropicMessages(nonSystemMessages);
 
     // Map optional params
     if (request.temperature !== undefined) body.temperature = request.temperature;
