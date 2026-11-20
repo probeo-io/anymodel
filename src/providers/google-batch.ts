@@ -1,15 +1,14 @@
 import type { BatchAdapter, NativeBatchStatus } from './adapter.js';
-import type { BatchRequestItem, BatchResultItem, ChatCompletion, FunctionTool, Message, ToolCall } from '../types.js';
+import type { BatchRequestItem, BatchResultItem, ChatCompletion, Message, ToolCall } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
 import { resolveMaxTokens } from '../utils/token-estimate.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
+import { geminiCitations, geminiTools } from '../utils/web-search.js';
+import { geminiUsage } from '../utils/gemini-usage.js';
+import { withToolCost, webSearchCost } from '../pricing/tool-fees.js';
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-
-function isFunctionTool(tool: unknown): tool is FunctionTool {
-  return Boolean(tool && typeof tool === 'object' && (tool as FunctionTool).type === 'function');
-}
 
 export function createGoogleBatchAdapter(apiKey: string): BatchAdapter {
   async function apiRequest(path: string, options: {
@@ -90,15 +89,9 @@ export function createGoogleBatchAdapter(apiKey: string): BatchAdapter {
 
     // Map tools
     if (req.tools && req.tools.length > 0) {
-      const functionTools = req.tools.filter(isFunctionTool);
-      body.tools = [{
-        functionDeclarations: functionTools.map(t => ({
-          name: t.function.name,
-          description: t.function.description || '',
-          parameters: t.function.parameters || {},
-        })),
-      }];
-      if (functionTools.length === 0) delete body.tools;
+      const tools = geminiTools(req.tools);
+      body.tools = tools;
+      if (tools.length === 0) delete body.tools;
 
       if (req.tool_choice) {
         if (req.tool_choice === 'auto') {
@@ -161,18 +154,18 @@ export function createGoogleBatchAdapter(apiKey: string): BatchAdapter {
       ? 'tool_calls' as const
       : mapFinishReason(candidate?.finishReason || 'STOP');
 
-    return {
+    const result: ChatCompletion = {
       id: generateId(),
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
       model: `google/${model}`,
       choices: [{ index: 0, message, finish_reason: finishReason }],
-      usage: {
-        prompt_tokens: response.usageMetadata?.promptTokenCount || 0,
-        completion_tokens: response.usageMetadata?.candidatesTokenCount || 0,
-        total_tokens: response.usageMetadata?.totalTokenCount || 0,
-      },
+      usage: geminiUsage(response.usageMetadata),
     };
+    withToolCost(result.usage, webSearchCost('google', candidate?.groundingMetadata?.webSearchQueries?.length ?? 0));
+    const citations = geminiCitations(candidate);
+    if (citations.length > 0) (result as any).citations = citations;
+    return result;
   }
 
   function mapBatchState(state: string): NativeBatchStatus['status'] {

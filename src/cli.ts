@@ -2,21 +2,23 @@
 
 import { startServer } from './server.js';
 
+declare const __ANYMODEL_VERSION__: string;
+
 const args = process.argv.slice(2);
 
 if (args[0] === 'serve') {
   const port = getArg(args, '--port', '4141');
-  const host = getArg(args, '--host', '0.0.0.0');
+  const host = getArg(args, '--host', '127.0.0.1');
 
   startServer({
     port: parseInt(port, 10),
     host,
   });
 } else {
-  console.log('@probeo/anymodel v0.1.0');
+  console.log(`@probeo/anymodel v${__ANYMODEL_VERSION__}`);
   console.log('');
   console.log('Usage:');
-  console.log('  anymodel serve [--port 4141] [--host 0.0.0.0]');
+  console.log('  anymodel serve [--port 4141] [--host 127.0.0.1]');
   console.log('');
   console.log('SDK usage:');
   console.log('  import { AnyModel } from "@probeo/anymodel";');

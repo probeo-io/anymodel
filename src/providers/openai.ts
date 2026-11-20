@@ -12,6 +12,7 @@ import type {
 import { AnyModelError } from '../types.js';
 import { generateId } from '../utils/id.js';
 import { fetchWithTimeout, getFlexTimeout } from '../utils/fetch-with-timeout.js';
+import { withToolCost, webSearchCost } from '../pricing/tool-fees.js';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 type PromptCacheStrategy = 'openai' | 'xai' | 'none';
@@ -99,7 +100,7 @@ export function createOpenAIAdapter(
 
   // Models that use max_completion_tokens instead of max_tokens
   function usesMaxCompletionTokens(model: string): boolean {
-    return /^(o[1-9]|gpt-5|gpt-4o)/.test(model);
+    return /^(o[1-9]|gpt-6|gpt-5|gpt-4o)/.test(model);
   }
 
   function hasWebSearchTool(tools: Tool[] | undefined): boolean {
@@ -278,6 +279,7 @@ export function createOpenAIAdapter(
           ],
           usage: usageFromResponses(r),
         };
+        withToolCost(result.usage, webSearchCost('openai', r.output.filter((item: any) => item?.type === 'web_search_call').length));
         const toolCalls = r.output.filter((item: any) => item?.type === 'function_call').map((item: any) => ({ id: item.call_id, type: 'function' as const, function: { name: item.name, arguments: item.arguments } }));
         if (toolCalls.length) {
           result.choices[0]!.message.tool_calls = toolCalls;

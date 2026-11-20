@@ -1,16 +1,15 @@
 import type { BatchAdapter, NativeBatchStatus } from './adapter.js';
-import type { BatchRequestItem, BatchResultItem, ChatCompletion, FunctionTool, Message, ToolCall } from '../types.js';
+import type { BatchRequestItem, BatchResultItem, ChatCompletion, Message, ToolCall } from '../types.js';
 import { AnyModelError } from '../types.js';
+import { toAnthropicMessages } from './anthropic-messages.js';
 import { generateId } from '../utils/id.js';
 import { resolveMaxTokens } from '../utils/token-estimate.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
+import { anthropicCitations, anthropicTools } from '../utils/web-search.js';
+import { withToolCost, webSearchCost } from '../pricing/tool-fees.js';
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
-
-function isFunctionTool(tool: unknown): tool is FunctionTool {
-  return Boolean(tool && typeof tool === 'object' && (tool as FunctionTool).type === 'function');
-}
 
 export function createAnthropicBatchAdapter(apiKey: string): BatchAdapter {
   async function apiRequest(path: string, options: {
@@ -59,12 +58,7 @@ export function createAnthropicBatchAdapter(apiKey: string): BatchAdapter {
     }
 
     // Map messages
-    params.messages = nonSystemMessages.map(m => ({
-      role: m.role === 'tool' ? 'user' : m.role,
-      content: m.tool_call_id
-        ? [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: typeof m.content === 'string' ? m.content : '' }]
-        : m.content,
-    }));
+    params.messages = toAnthropicMessages(nonSystemMessages);
 
     if (req.temperature !== undefined) params.temperature = req.temperature;
     if (req.top_p !== undefined) params.top_p = req.top_p;
@@ -79,13 +73,9 @@ export function createAnthropicBatchAdapter(apiKey: string): BatchAdapter {
 
     // Map tools
     if (req.tools && req.tools.length > 0) {
-      const functionTools = req.tools.filter(isFunctionTool);
-      params.tools = functionTools.map(t => ({
-        name: t.function.name,
-        description: t.function.description || '',
-        input_schema: t.function.parameters || { type: 'object', properties: {} },
-      }));
-      if (functionTools.length === 0) delete params.tools;
+      const tools = anthropicTools(model, req.tools);
+      params.tools = tools;
+      if (tools.length === 0) delete params.tools;
 
       if (req.tool_choice) {
         if (req.tool_choice === 'auto') {
@@ -145,7 +135,7 @@ export function createAnthropicBatchAdapter(apiKey: string): BatchAdapter {
       message.tool_calls = toolCalls;
     }
 
-    return {
+    const result: ChatCompletion = {
       id: generateId(),
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
@@ -161,6 +151,10 @@ export function createAnthropicBatchAdapter(apiKey: string): BatchAdapter {
         total_tokens: (msg.usage?.input_tokens || 0) + (msg.usage?.output_tokens || 0),
       },
     };
+    withToolCost(result.usage, webSearchCost('anthropic', Number(msg.usage?.server_tool_use?.web_search_requests ?? 0)));
+    const citations = anthropicCitations(msg.content || []);
+    if (citations.length > 0) (result as any).citations = citations;
+    return result;
   }
 
   return {

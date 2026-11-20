@@ -54,6 +54,12 @@ describe('max_tokens translation', () => {
       expect(body.max_tokens).toBeUndefined();
     });
 
+    it('translates max_tokens to max_completion_tokens for gpt-6-luna', () => {
+      const body = adapter.translateRequest(baseRequest('gpt-6-luna', 16000)) as any;
+      expect(body.max_completion_tokens).toBe(16000);
+      expect(body.max_tokens).toBeUndefined();
+    });
+
     // ─── Legacy models that keep max_tokens ──────────────────────────
 
     it('keeps max_tokens for gpt-4-turbo', () => {

@@ -33,3 +33,12 @@ billing rules.
 - Cache reads/writes are costed separately from uncached input.
 - A pricing-table refresh changes future calculations while historical cost
   records retain their rates and pricing version.
+
+## Tool fees (2026-10-07)
+
+Server-side tools charge per call on top of tokens. Each adapter puts the call's fee on
+`usage.tool_cost` (USD), and `calculateProviderCost`, generation stats and both batch paths add it,
+undiscounted by flex or batch. Web search fees per search, from `src/pricing/tool-fees.ts`: OpenAI
+$0.010, xAI $0.005, Anthropic $0.010, Google $0.014 (Gemini's 5,000 free searches a month are not
+modelled). Perplexity reports its own per-request fee, which is used as given. Gemini usage
+counts thinking tokens as output and tool-use prompt tokens as input.

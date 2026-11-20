@@ -128,6 +128,8 @@ export interface Usage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  /** USD charged per call for server-side tools (web searches, request fees), on top of tokens. */
+  tool_cost?: number;
 }
 
 export interface ChatCompletionChoice {
@@ -360,6 +362,7 @@ export interface AnyModelConfig {
   together?: ProviderConfig;
   fireworks?: ProviderConfig;
   perplexity?: ProviderConfig;
+  deepinfra?: ProviderConfig;
   ollama?: ProviderConfig & { baseURL?: string };
   custom?: Record<string, CustomProviderConfig>;
   aliases?: Record<string, string>;

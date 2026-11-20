@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.0] - Unreleased
+
+### Packaging and server cleanup
+
+- Preserve the feature work below under a distinct package version; CLI version comes from the package manifest.
+- Bundle the existing queue dependency so both CommonJS and ESM exports load correctly.
+- Failed explicit pricing refresh preserves the previous snapshot and returns a failure status.
+- Normal install/build uses committed pricing. Refresh only through `npm run pricing:refresh`, with pinned local tooling.
+- Declare Node `^20.19.0 || >=22.12.0` for ESM/CJS compatibility with the existing runtime dependency.
+- HTTP server defaults to loopback. Explicit remote binding requires a separate server bearer key; embedded servers reject unkeyed non-loopback clients.
+- Correct package names, repository links, runtime/build notes and current provider controls.
+- Include the previously unversioned OpenAI explicit prompt-cache breakpoint change and Git `prepare` support from main.
+
+
+### Added
+
+- **DeepInfra provider** — `DEEPINFRA_API_KEY`, models addressed as `deepinfra/<org>/<model>` (e.g. `deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo`). Chat completions with streaming, tool calling, structured outputs, and `reasoning: { effort }`. `listModels()` reads DeepInfra's per-model metadata, so it returns only chat-surface models with their real context lengths, per-token pricing, and vision/cache/reasoning capabilities.
+- **DeepInfra native batch** — OpenAI-compatible JSONL upload → `/batches` → poll → download, wired into `BatchManager` like the other native batch providers. Batch runs are billed at 20% off, reflected in `providerPricingMultiplier('deepinfra', 'native_batch')`.
+- Prompt caching on DeepInfra is automatic; a request's `cache.key` is forwarded as `prompt_cache_key` to partition the cache. DeepInfra exposes no retention or mode controls, so the rest of `cache` is not sent.
+
+### Changed
+
+- **Pricing data refreshed** — 513 models, up from 398. Adds 52 newly listed models (including `openai/gpt-6-astra`, `anthropic/claude-fable-5.1`, `google/gemini-3.8-flash`, `deepseek/deepseek-v4-pro-0813`) and drops models OpenRouter has delisted.
+- **DeepInfra rates are now bundled** — `scripts/fetch-pricing.ts` also reads DeepInfra's own per-model rates and keys them as `deepinfra/<org>/<model>`. OpenRouter lists the same open weights under their originating org (`meta-llama/…`), which says nothing about what DeepInfra charges to serve them, so a `deepinfra/…` request previously found no pricing entry and cost $0. Both fetches must now succeed for the table to be regenerated.
+
+### Fixed
+
+- `tests/batch-cost.test.ts` derives its expected cost from `getModelPricing()` instead of hardcoded per-token rates, which broke the test on every pricing regeneration.
+- **`getModelPricing()` no longer resolves by table order.** Prefix matching returned the first key where either string prefixed the other, and the table is regenerated from a remote API whose ordering is arbitrary — so a model's price could change on a regeneration alone, with no code change and nothing failing. `openai/gpt-6` prefix-matched four entries spanning a 2x rate spread. Resolution is now settled by key length and then alphabetically: exact id first, then the longest known id the query extends (dated and versioned ids still fall back to their base), then the shortest id extending the query. Across 1278 probes over five table orderings, 261 results varied under the old rule and none under the new one; no real model id lost pricing or changed rate.
+- `:batch` entries are a pricing mode, not a model, and are no longer returned for a query that doesn't ask for one.
+- **Long-context pricing tiers are now applied.** OpenRouter publishes per-model `overrides` that raise rates past a prompt-size threshold, and the generator was discarding them — so a long request was billed at the model's base rate all the way up. 63 models carry tiers, concentrated in the providers most used here: OpenAI (24), Qwen (13), xAI (8), Google (8), Anthropic (3). On a 400k-token prompt this under-reported cost by roughly 100% for `openai/gpt-6-astra` and `x-ai/grok-4.6`, and by 564% for `qwen/qwen3.7-flash`. `PricingEntry` gains an optional `tiers` array and a new `effectiveRates(pricing, promptTokens)` resolves the rates in force for a given prompt size; `calculateCost` uses it. Flat-rate models are unaffected.
+- Time-window overrides (off-peak `utc_start`/`utc_end` rates) and audio rates are skipped rather than applied as if they were token tiers — they need inputs a static table doesn't have. The generator reports how many it skipped.
+- **Direct-provider rates are cross-checked at generation time.** None of OpenAI, Anthropic, Google, or xAI publish machine-readable pricing — all four model endpoints require auth and return no rates — so OpenRouter remains the source. `scripts/fetch-pricing.ts` now also fetches LiteLLM's independent price table and reports any model where the two disagree. On the current data, 84 of 85 matched models agree exactly; the outlier is `openai/gpt-5.6-sol`, where OpenRouter lists $2/$10 per 1M and LiteLLM lists $4/$20 with $2 as the flex rate. The check is advisory and its failure is a warning, not a build error: it validates the table rather than supplying it.
+- **`prices.json`** — hand-verified rates at the project root that beat every fetched source. Since no vendor publishes machine-readable pricing, this is the only way to pin a rate you have actually confirmed, or to price a model no aggregator lists. The format is a model id and two numbers, per million tokens as vendors quote them: `"openai/gpt-4o": { "in": 2.5, "out": 10 }`. Per-token conversion, cache rates, and long-context tiers are handled by the generator; `cacheRead`, `cacheWrite`, and `tiers` are optional. Any value under 0.001 is rejected as an almost-certain per-token typo, and every validation failure names the model and fails the build rather than mispricing quietly. Entries upstream has caught up with are reported as safe to delete. Applied before the LiteLLM cross-check, so a correction turns a reported disagreement into agreement — and the cross-check prints the paste-ready line when it finds one.
+- **Generated entries are sorted by model id.** Both upstream APIs return models in an order that shifts between fetches, which reshuffled all 513 lines on every regeneration and buried the actual rate changes. Regenerating is now reproducible apart from the timestamp.
+
 ## [0.10.0] - 2026-08-06
 
 ### Added

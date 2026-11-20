@@ -7,6 +7,8 @@ export interface GenerationRecord {
   providerName: string;
   promptTokens: number;
   completionTokens: number;
+  /** USD for server-side tools on this call (searches, request fees). */
+  toolCost?: number;
   startTime: number; // epoch ms
   endTime: number;   // epoch ms
   finishReason: FinishReason;
@@ -43,7 +45,7 @@ export class GenerationStatsStore {
       id: rec.id,
       model: rec.model,
       provider_name: rec.providerName,
-      total_cost: calculateCost(rec.model, rec.promptTokens, rec.completionTokens),
+      total_cost: calculateCost(rec.model, rec.promptTokens, rec.completionTokens) + (rec.toolCost ?? 0),
       tokens_prompt: rec.promptTokens,
       tokens_completion: rec.completionTokens,
       latency,

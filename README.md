@@ -1,13 +1,15 @@
-# @antidrift/anymodel
+# @probeo/anymodel
 
 OpenRouter-compatible LLM router with unified batch support. Self-hosted, zero fees.
 
-Route requests across OpenAI, Anthropic, and Google with a single API. Add any OpenAI-compatible provider. Run as an SDK or standalone HTTP server.
+Route requests across OpenAI, Anthropic, Google, xAI, Perplexity, and DeepInfra with a single API. Add any OpenAI-compatible provider. Run as an SDK or standalone HTTP server.
 
 ## Install
 
+Requires Node.js 20.19+ on the 20.x line, or Node.js 22.12+.
+
 ```bash
-npm install @antidrift/anymodel
+npm install @probeo/anymodel
 ```
 
 ## Quick Start
@@ -23,7 +25,7 @@ export GOOGLE_API_KEY=AIza...
 ### SDK Usage
 
 ```typescript
-import { AnyModel } from "@antidrift/anymodel";
+import { AnyModel } from "@probeo/anymodel";
 
 const client = new AnyModel();
 
@@ -65,6 +67,7 @@ Set the env var and go. Models are auto-discovered from each provider's API.
 | Together | `TOGETHER_API_KEY` | `together/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
 | Fireworks | `FIREWORKS_API_KEY` | `fireworks/accounts/fireworks/models/llama-v3p3-70b-instruct` |
 | Perplexity | `PERPLEXITY_API_KEY` | `perplexity/sonar-pro` |
+| DeepInfra | `DEEPINFRA_API_KEY` | `deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
 | Ollama | `OLLAMA_BASE_URL` | `ollama/llama3.3` |
 
 Ollama runs locally with no API key — just set `OLLAMA_BASE_URL` (defaults to `http://localhost:11434/v1`).
@@ -82,6 +85,7 @@ groq/llama-3.3-70b-versatile
 deepseek/deepseek-chat
 xai/grok-4
 perplexity/sonar-pro
+deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo
 ollama/llama3.3
 ```
 
@@ -181,7 +185,7 @@ for (const result of results.results) {
 
 ### Submit now, check later
 
-Submit a batch and get back an ID immediately — no need to keep the process running for native batches (OpenAI, Anthropic, Google):
+Submit a batch and get back an ID immediately — no need to keep the process running for native batches (OpenAI, Anthropic, Google, DeepInfra):
 
 ```typescript
 // Submit and get the batch ID
@@ -362,7 +366,21 @@ console.log(stats.total_cost); // auto-calculated from bundled pricing data
 
 ### Auto Pricing / Cost Calculation
 
-Pricing for 323 models is baked in at build time from OpenRouter — always current as of last publish. Costs are calculated automatically from token usage with no configuration needed.
+Cost estimates use the committed pricing snapshot in `src/generated/pricing.ts`. `PRICING_AS_OF` identifies when it was generated; estimates are not a guarantee of current vendor billing. Normal builds and Git installs never fetch or rewrite pricing. Failed explicit refreshes return a nonzero status and do not replace the previous snapshot.
+
+Long-context tiers are applied automatically: models that charge more past a prompt-size threshold (OpenAI above 272k tokens, xAI above 200k) bill at the tier rate, not the entry rate.
+
+The explicit `npm run pricing:refresh` command fetches OpenRouter and DeepInfra data and cross-checks direct-provider entries against LiteLLM. It requires network access. Review the generated diff and `prices.json` overrides, then commit the resulting snapshot before building a release. A normal `npm run build` or Git installation uses that exact committed data.
+
+To pin a price you have verified yourself, or to price a model no aggregator lists, put it in `prices.json` at the project root — a model id and two numbers, per million tokens, exactly as vendors quote them:
+
+```json
+{
+  "openai/gpt-5.6-sol": { "in": 4, "out": 20 }
+}
+```
+
+That is the whole format. Per-token conversion, cache rates, and long-context tiers are handled for you; `cacheRead`, `cacheWrite`, and `tiers` are there if you need them but most entries won't. These win over every fetched source, a typo'd rate fails the explicit refresh rather than mispricing quietly, and once upstream reports the same number the generator tells you the entry is safe to delete.
 
 ```typescript
 // Per-request cost on GenerationStats
@@ -373,10 +391,27 @@ console.log(stats.total_cost); // e.g. 0.0023
 const results = await client.batches.createAndPoll(request);
 console.log(results.usage.estimated_cost); // total across all requests
 
-// Native batch pricing is automatically 50% off
+// Native batch pricing is applied automatically (50% off; 20% off on DeepInfra)
 // Utility functions also exported
-import { getModelPricing, calculateCost, PRICING_AS_OF, PRICING_MODEL_COUNT } from "@antidrift/anymodel";
+import { getModelPricing, calculateCost, PRICING_AS_OF, PRICING_MODEL_COUNT } from "@probeo/anymodel";
 ```
+
+## Reasoning, caching and web search
+
+Requests support provider-neutral `reasoning: { effort: 'high' }`, `cache: { key: 'stable-prefix', ttl: '1h' }`, and `tools: [{ type: 'web_search' }]`. Mark an explicit reusable prompt boundary with `cacheBreakpoint: true` on a message and `cache: { mode: 'explicit' }` where supported. Provider adapters translate supported controls and reject unsupported combinations; providers differ in cache retention, search filtering and billing. See the exported request types and fixture tests for the exact contract.
+
+## Development and Git consumers
+
+```bash
+npm ci
+npm run lint
+npm test
+npm run build
+# Only when deliberately updating the pricing snapshot:
+npm run pricing:refresh
+```
+
+`prepare` compiles the committed source with locally installed build tools; it does not contact pricing services. Git consumers should use an immutable full commit and commit their lockfile. Install with the development build tooling available for Git preparation; the npm tarball includes ready-to-use `dist/`. This source prepares version 0.11.0; it does not mean that version has been published. Existing consumer versions are not automatically upgraded.
 
 ## Configuration
 
@@ -506,8 +541,10 @@ const response = await client.chat.completions.create({
 Run as a standalone HTTP server compatible with the OpenAI SDK:
 
 ```bash
-npx anymodel serve --port 4141
+npx --package @probeo/anymodel anymodel serve --port 4141
 ```
+
+The server binds `127.0.0.1` by default. Local-only mode does not require a client key. For network access, configure `ANYMODEL_SERVER_API_KEY` and explicitly select `--host 0.0.0.0` (or set `ServerOptions.apiKey` programmatically). Clients send that separate server key as `Authorization: Bearer ...`; never give them provider API keys. Use TLS at your reverse proxy. Non-loopback binding without a key fails, and an embedded server also rejects non-loopback peers without a key. Unkeyed browser requests also require a loopback Origin, so an external webpage cannot use local provider credentials. Health and OPTIONS remain public and do not call providers.
 
 Then point any OpenAI-compatible client at it:
 
@@ -566,9 +603,9 @@ npx tsx examples/basic.ts batch
 ## Roadmap
 
 - [ ] **A/B testing** — split routing (% traffic to each model) and compare mode (same request to multiple models, return all responses with stats)
-- [x] **Cost tracking** — per-request and aggregate cost calculation from bundled pricing data (323 models from OpenRouter)
+- [x] **Cost tracking** — per-request and aggregate cost calculation from bundled pricing data (513 models: 409 from OpenRouter, 104 priced directly by DeepInfra)
 - [ ] **Caching** — response caching with configurable TTL for identical requests
-- [x] **Native batch APIs** — OpenAI Batch API (JSONL upload, 50% cost), Anthropic Message Batches (10K requests, async), and Google Gemini Batch (50% cost). Auto-detects provider and routes to native API, falls back to concurrent for other providers
+- [x] **Native batch APIs** — OpenAI Batch API (JSONL upload, 50% cost), Anthropic Message Batches (10K requests, async), Google Gemini Batch (50% cost), and DeepInfra Batch (OpenAI-compatible JSONL upload, 20% cost). Auto-detects provider and routes to native API, falls back to concurrent for other providers
 - [x] **Adaptive concurrency** — auto-discover provider rate limit ceilings via TCP slow-start + AIMD, with hard cap support for multi-job workloads
 - [ ] **Result export** — `saveResults()` to write batch results to a configurable output directory
 - [ ] **Prompt logging** — optional request/response logging for debugging and evaluation
@@ -577,10 +614,10 @@ npx tsx examples/basic.ts batch
 
 | Package | Description |
 |---|---|
-| [anymodel-py](https://github.com/antidrift-dev/anymodel-py) | Python version of this package |
-| [anymodel-go](https://github.com/antidrift-dev/anymodel-go) | Go version of this package |
-| [@antidrift/anyserp](https://github.com/antidrift-dev/anyserp) | Unified SERP API router for TypeScript |
-| [@antidrift/workflow](https://github.com/antidrift-dev/workflow) | Stage-based pipeline engine for TypeScript |
+| [anymodel-py](https://github.com/probeo-io/anymodel-py) | Python version of this package |
+| [anymodel-go](https://github.com/probeo-io/anymodel-go) | Go version of this package |
+| [@probeo/anyserp](https://github.com/probeo-io/anyserp) | Unified SERP API router for TypeScript |
+| [@probeo/workflow](https://github.com/probeo-io/workflow) | Stage-based pipeline engine for TypeScript |
 
 ## License
 

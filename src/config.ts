@@ -104,6 +104,7 @@ function envConfig(): AnyModelConfig {
     ['together', 'TOGETHER_API_KEY'],
     ['fireworks', 'FIREWORKS_API_KEY'],
     ['perplexity', 'PERPLEXITY_API_KEY'],
+    ['deepinfra', 'DEEPINFRA_API_KEY'],
   ];
 
   for (const [key, envVar] of envMap) {

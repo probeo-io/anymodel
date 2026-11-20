@@ -49,7 +49,7 @@ describe('xAI adapter', () => {
 
     expect(completion.model).toBe('xai/grok-4.5');
     expect(completion.choices[0].message.content).toBe('{"ok":true}');
-    expect(completion.usage).toEqual({ prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 });
+    expect(completion.usage).toEqual({ prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, tool_cost: 0.005 });
     expect(completion.citations).toEqual(['https://www.sos.state.tx.us/corp/instructions/205.shtml']);
     expect(completion.server_side_tool_usage_details).toEqual({ web_search_calls: 1 });
   });

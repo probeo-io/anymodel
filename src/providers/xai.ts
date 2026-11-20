@@ -11,6 +11,7 @@ import type {
 } from '../types.js';
 import { AnyModelError } from '../types.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
+import { withToolCost, webSearchCost } from '../pricing/tool-fees.js';
 
 const XAI_API_BASE = 'https://api.x.ai/v1';
 
@@ -27,10 +28,17 @@ const SUPPORTED_PARAMS = new Set([
   'cache',
 ]);
 
+// xAI's text models, from its model list and docs.x.ai/developers/models (context windows), 2026-10-07.
+// The docs give no output limits; 128000 is carried over from the earlier list, not checked.
 const MODELS = [
-  { id: 'grok-4.5', name: 'Grok 4.5', context: 256000, maxOutput: 128000 },
-  { id: 'grok-4.3', name: 'Grok 4.3', context: 256000, maxOutput: 128000 },
-  { id: 'grok-4.20', name: 'Grok 4.20', context: 256000, maxOutput: 128000 },
+  { id: 'grok-4.7', name: 'Grok 4.7', context: 500000, maxOutput: 128000 },
+  { id: 'grok-4.6', name: 'Grok 4.6', context: 500000, maxOutput: 128000 },
+  { id: 'grok-4.5', name: 'Grok 4.5', context: 500000, maxOutput: 128000 },
+  { id: 'grok-4.3', name: 'Grok 4.3', context: 1000000, maxOutput: 128000 },
+  { id: 'grok-4.20-0309-reasoning', name: 'Grok 4.20 Reasoning', context: 1000000, maxOutput: 128000 },
+  { id: 'grok-4.20-0309-non-reasoning', name: 'Grok 4.20 Non-Reasoning', context: 1000000, maxOutput: 128000 },
+  { id: 'grok-4.20-multi-agent-0309', name: 'Grok 4.20 Multi-Agent', context: 1000000, maxOutput: 128000 },
+  { id: 'grok-build-0.1', name: 'Grok Build 0.1', context: 256000, maxOutput: 128000 },
 ];
 
 function hasWebSearchTool(tools: Tool[] | undefined): boolean {
@@ -174,6 +182,7 @@ export function createXAIAdapter(apiKey: string, baseURL = XAI_API_BASE): Provid
       ],
       usage: usageFromResponses(r),
     };
+    withToolCost(result.usage, webSearchCost('xai', Number(r.usage?.server_side_tool_usage_details?.web_search_calls ?? 0)));
     if (r.citations) (result as any).citations = r.citations;
     if (r.output) (result as any).output = r.output;
     if (r.server_side_tool_usage) (result as any).server_side_tool_usage = r.server_side_tool_usage;

@@ -64,7 +64,7 @@ describe('OpenAI adapter', () => {
 
     expect(completion.model).toBe('openai/gpt-5.6-terra');
     expect(completion.choices[0].message.content).toBe('{"ok":true}');
-    expect(completion.usage).toEqual({ prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 });
+    expect(completion.usage).toEqual({ prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, tool_cost: 0.01 });
     expect(completion.output).toEqual([{ type: 'web_search_call' }]);
     expect(completion.server_side_tool_usage_details).toEqual({ web_search_calls: 1 });
   });

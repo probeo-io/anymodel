@@ -7,6 +7,7 @@ export function providerPricingMultiplier(provider: string, mode: PricingMode): 
     google: { standard: 1, native_batch: 0.5 },
     xai: { standard: 1 },
     perplexity: { standard: 1 },
+    deepinfra: { standard: 1, native_batch: 0.8 },
   };
   return policy[provider]?.[mode] ?? 1;
 }
