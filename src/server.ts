@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { AnyModel } from './client.js';
 import type { AnyModelConfig, ChatCompletionRequest, ChatCompletionChunk } from './types.js';
 
@@ -6,6 +7,8 @@ export interface ServerOptions {
   port?: number;
   host?: string;
   config?: AnyModelConfig;
+  /** Bearer key for server clients, separate from provider credentials. */
+  apiKey?: string;
 }
 
 function parseBody(req: IncomingMessage): Promise<string> {
@@ -41,12 +44,23 @@ async function sendSSE(res: ServerResponse, stream: AsyncIterable<ChatCompletion
   res.end();
 }
 
+function serverApiKey(options: ServerOptions): string | undefined {
+  const key = options.apiKey ?? process.env.ANYMODEL_SERVER_API_KEY;
+  return key?.trim() ? key : undefined;
+}
+
+function isLoopback(address: string | undefined): boolean {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
 export function createAnyModelServer(options: ServerOptions = {}): ReturnType<typeof createServer> {
   const client = new AnyModel(options.config);
   const basePath = '/api/v1';
+  const apiKey = serverApiKey(options);
+  const expectedKey = apiKey ? Buffer.from(apiKey) : undefined;
 
   const server = createServer(async (req, res) => {
-    const url = new URL(req.url || '/', `http://${req.headers.host}`);
+    const url = new URL(req.url || '/', 'http://localhost');
     const path = url.pathname;
 
     // CORS headers
@@ -65,6 +79,33 @@ export function createAnyModelServer(options: ServerOptions = {}): ReturnType<ty
       if (path === '/health' && req.method === 'GET') {
         sendJSON(res, 200, { status: 'ok' });
         return;
+      }
+
+      // Authorize before parsing request bodies or invoking providers. Health/OPTIONS spend nothing.
+      if (expectedKey) {
+        const header = req.headers.authorization;
+        const supplied = Buffer.from(header?.startsWith('Bearer ') ? header.slice(7) : '');
+        if (supplied.length !== expectedKey.length || !timingSafeEqual(supplied, expectedKey)) {
+          res.setHeader('WWW-Authenticate', 'Bearer');
+          sendError(res, 401, 'Unauthorized');
+          return;
+        }
+      } else if (!isLoopback(req.socket.remoteAddress)) {
+        sendError(res, 403, 'Remote server access requires ANYMODEL_SERVER_API_KEY');
+        return;
+      }
+
+      if (!expectedKey && req.headers.origin) {
+        let localOrigin = false;
+        try {
+          const origin = new URL(req.headers.origin);
+          localOrigin = ['http:', 'https:'].includes(origin.protocol)
+            && (origin.hostname === 'localhost' || origin.hostname === '[::1]' || isLoopback(origin.hostname));
+        } catch { /* Opaque and invalid browser origins are not local callers. */ }
+        if (!localOrigin) {
+          sendError(res, 403, 'Browser access without a server key requires a loopback origin');
+          return;
+        }
       }
 
       // Chat completions
@@ -158,7 +199,10 @@ export function createAnyModelServer(options: ServerOptions = {}): ReturnType<ty
 
 export function startServer(options: ServerOptions = {}): void {
   const port = options.port ?? 4141;
-  const host = options.host ?? '0.0.0.0';
+  const host = options.host ?? '127.0.0.1';
+  if (host !== 'localhost' && !isLoopback(host) && !serverApiKey(options)) {
+    throw new Error('Non-loopback binding requires ANYMODEL_SERVER_API_KEY or ServerOptions.apiKey');
+  }
 
   const server = createAnyModelServer(options);
 

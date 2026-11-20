@@ -1,16 +1,16 @@
 /**
  * Fetches model pricing from OpenRouter and DeepInfra and generates a static
- * pricing table. Run at build time: `npx tsx scripts/fetch-pricing.ts`
+ * pricing table. Refresh explicitly: `npm run pricing:refresh` (review and commit the generated snapshot)
  *
  * DeepInfra is fetched separately because OpenRouter lists the open models it
  * serves under their originating org (`meta-llama/...`), which says nothing
  * about what DeepInfra charges to serve them. Its own rates are keyed under
  * `deepinfra/` so that a `deepinfra/<org>/<model>` request resolves exactly.
  *
- * Falls back to the last committed version if either fetch fails.
+ * Reports failure and preserves the committed snapshot if either required fetch fails.
  */
 
-import { writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { writeFileSync, renameSync, unlinkSync, existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { applyOverrides, parseOverrides } from './pricing-overrides.js';
@@ -494,18 +494,18 @@ async function main() {
     // rate shows up as agreement rather than still being reported as a diff.
     await crossCheckRates(pricing);
     const source = generateSource(pricing);
-    writeFileSync(OUTPUT_PATH, source);
+    const temporary = `${OUTPUT_PATH}.tmp-${process.pid}`;
+    try {
+      writeFileSync(temporary, source);
+      renameSync(temporary, OUTPUT_PATH);
+    } finally {
+      if (existsSync(temporary)) unlinkSync(temporary);
+    }
     console.log(`Written to ${OUTPUT_PATH}`);
   } catch (err) {
     console.error('Failed to fetch pricing:', (err as Error).message);
-    if (existsSync(OUTPUT_PATH)) {
-      console.log('Using existing pricing data as fallback');
-    } else {
-      console.error('No fallback available — generating empty pricing table');
-      const empty = generateSource(new Map());
-      writeFileSync(OUTPUT_PATH, empty);
-    }
-    process.exit(0); // Don't fail the build
+    console.error('Pricing refresh failed; existing snapshot was not replaced.');
+    process.exitCode = 1;
   }
 }
 

@@ -2,7 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.11.0] - Unreleased
+
+### Packaging and server cleanup
+
+- Preserve the feature work below under a distinct package version; CLI version comes from the package manifest.
+- Bundle the existing queue dependency so both CommonJS and ESM exports load correctly.
+- Failed explicit pricing refresh preserves the previous snapshot and returns a failure status.
+- Normal install/build uses committed pricing. Refresh only through `npm run pricing:refresh`, with pinned local tooling.
+- Declare Node `^20.19.0 || >=22.12.0` for ESM/CJS compatibility with the existing runtime dependency.
+- HTTP server defaults to loopback. Explicit remote binding requires a separate server bearer key; embedded servers reject unkeyed non-loopback clients.
+- Correct package names, repository links, runtime/build notes and current provider controls.
+- Include the previously unversioned OpenAI explicit prompt-cache breakpoint change and Git `prepare` support from main.
+
 
 ### Added
 
